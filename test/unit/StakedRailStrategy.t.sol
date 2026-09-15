@@ -2,12 +2,17 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {Bag} from "@yieldnest-vault-withdrawals/Bag.sol";
+import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
+import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
+import {IBag} from "@yieldnest-vault-withdrawals/interface/IBag.sol";
+import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
 
-import {QueuedRail} from "../../src/QueuedRail.sol";
+import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
-import {RailWithdrawalRequest} from "../../src/withdrawals/RailWithdrawalRequest.sol";
 import {RailWithdrawer} from "../../src/withdrawals/RailWithdrawer.sol";
 import {RailWithdrawalResolver} from "../../src/withdrawals/RailWithdrawalResolver.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
@@ -18,18 +23,32 @@ contract StakedRailStrategyTest is Test {
 
     MockERC20 rail;
     MockRailgunStaking staking;
-    QueuedRail qRail;
+    QueuedRailStrategy qRail;
     RailStakePositionManager manager;
     StakedRailStrategy strategy;
-    RailWithdrawalRequest requests;
+    BeaconProxyFactory bagFactory;
+    WithdrawalRequest requests;
     RailWithdrawer withdrawer;
     RailWithdrawalResolver resolver;
 
     function setUp() external {
         rail = new MockERC20("RAIL", "RAIL", 18);
         staking = new MockRailgunStaking(rail);
-        qRail = new QueuedRail(address(this), address(rail));
-        manager = new RailStakePositionManager(address(this), rail, staking, qRail);
+
+        QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
+        qRail = QueuedRailStrategy(
+            payable(
+                address(
+                    new TransparentUpgradeableProxy(
+                        address(qRailImplementation),
+                        makeAddr("qRailProxyAdmin"),
+                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail)))
+                    )
+                )
+            )
+        );
+
+        manager = new RailStakePositionManager(address(this), rail, staking);
 
         StakedRailStrategy implementation = new StakedRailStrategy();
         strategy = StakedRailStrategy(
@@ -37,31 +56,84 @@ contract StakedRailStrategyTest is Test {
                 address(
                     new TransparentUpgradeableProxy(
                         address(implementation),
-                        makeAddr("proxyAdmin"),
+                        makeAddr("stRailProxyAdmin"),
                         abi.encodeCall(
                             StakedRailStrategy.initialize,
-                            (address(this), address(rail), manager, 1000 ether, 1000 ether, 1000 ether, 100)
+                            (address(this), address(rail), manager, qRail, 1000 ether, 1000 ether, 1000 ether, 100)
                         )
                     )
                 )
             )
         );
-        manager.setStrategy(address(strategy));
 
-        requests = new RailWithdrawalRequest(address(this), strategy, rail);
-        withdrawer = new RailWithdrawer(address(this), rail, qRail, requests);
+        Bag bagImplementation = new Bag();
+        BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
+        bagFactory = BeaconProxyFactory(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(bagFactoryImplementation),
+                    makeAddr("bagFactoryProxyAdmin"),
+                    abi.encodeCall(
+                        BeaconProxyFactory.initialize,
+                        (address(bagImplementation), address(this), address(this), address(this))
+                    )
+                )
+            )
+        );
+
+        MinAmountRequestPolicy requestPolicy = new MinAmountRequestPolicy(1);
+        WithdrawalRequest requestImplementation = new WithdrawalRequest();
+        requests = WithdrawalRequest(
+            payable(
+                address(
+                    new TransparentUpgradeableProxy(
+                        address(requestImplementation),
+                        makeAddr("requestProxyAdmin"),
+                        abi.encodeCall(
+                            WithdrawalRequest.initialize,
+                            (
+                                address(qRail),
+                                address(this),
+                                address(this),
+                                address(this),
+                                address(this),
+                                address(bagFactory),
+                                address(this),
+                                address(requestPolicy),
+                                uint256(1024)
+                            )
+                        )
+                    )
+                )
+            )
+        );
+
+        RailWithdrawer withdrawerImplementation = new RailWithdrawer();
+        withdrawer = RailWithdrawer(
+            payable(
+                address(
+                    new TransparentUpgradeableProxy(
+                        address(withdrawerImplementation),
+                        makeAddr("withdrawerProxyAdmin"),
+                        abi.encodeCall(RailWithdrawer.initialize, (address(qRail), address(requests), address(rail)))
+                    )
+                )
+            )
+        );
+
         resolver = new RailWithdrawalResolver(address(this), strategy, manager, requests, withdrawer);
 
-        qRail.grantRole(qRail.MINTER_ROLE(), address(manager));
-        qRail.grantRole(qRail.BURNER_ROLE(), address(withdrawer));
+        manager.setStrategy(address(strategy));
         manager.setExitSystem(address(withdrawer));
+        qRail.grantRole(qRail.MINTER_ROLE(), address(strategy));
+        qRail.grantRole(qRail.BURNER_ROLE(), address(withdrawer));
         manager.grantRole(manager.KEEPER_ROLE(), address(resolver));
-        strategy.grantRole(strategy.KEEPER_ROLE(), address(this));
-        strategy.grantRole(strategy.WITHDRAWAL_REQUEST_ROLE(), address(requests));
-        strategy.grantRole(strategy.UNPAUSER_ROLE(), address(this));
+        bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
+        requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
-        withdrawer.grantRole(withdrawer.RESOLVER_ROLE(), address(resolver));
         resolver.grantRole(resolver.KEEPER_ROLE(), address(this));
+        strategy.grantRole(strategy.KEEPER_ROLE(), address(this));
+        strategy.grantRole(strategy.UNPAUSER_ROLE(), address(this));
         strategy.unpause();
     }
 
@@ -79,27 +151,22 @@ contract StakedRailStrategyTest is Test {
         assertEq(strategy.maxRedeem(user), 0);
     }
 
-    function testFifoWithdrawalLifecycle() external {
+    function testQueuedRailUsesExistingWithdrawalRequestLifecycle() external {
         _deposit(user, 5000 ether);
         strategy.rebalanceStaking(10);
 
         vm.startPrank(user);
-        strategy.approve(address(requests), 1500 ether);
-        (uint256 requestId,) = requests.requestWithdrawal(1500 ether, user, "");
+        strategy.exitToQueuedRail(1500 ether, user);
+        qRail.approve(address(requests), 1500 ether);
+        uint256 requestId = requests.requestWithdrawal(1500 ether, user, "");
         vm.stopPrank();
 
+        assertEq(qRail.balanceOf(address(requests)), 1500 ether);
+        assertEq(qRail.convertToAssets(1500 ether), 1500 ether);
+
         resolver.rebalanceExits(2);
-        assertEq(qRail.balanceOf(address(withdrawer)), 2000 ether);
         assertEq(manager.activePrincipal(), 2000 ether);
         assertEq(manager.queuedPrincipal(), 2000 ether);
-
-        resolver.allocateRequests(1);
-        (uint256 shares, uint256 entitlement,,, RailWithdrawalRequest.RequestStatus status) =
-            requests.requests(requestId);
-        assertEq(shares, 1500 ether);
-        assertEq(entitlement, 1500 ether);
-        assertEq(uint256(status), uint256(RailWithdrawalRequest.RequestStatus.QUEUED));
-        assertEq(withdrawer.totalReservedQRAIL(), 1500 ether);
 
         uint256[] memory stakeIds = manager.queuedStakeIdsList();
         vm.warp(block.timestamp + 30 days + 1);
@@ -107,13 +174,18 @@ contract StakedRailStrategyTest is Test {
         assertEq(rail.balanceOf(address(withdrawer)), 2000 ether);
 
         resolver.resolveRequests(1);
-        (,,, address bag, RailWithdrawalRequest.RequestStatus resolvedStatus) = requests.requests(requestId);
-        assertEq(uint256(resolvedStatus), uint256(RailWithdrawalRequest.RequestStatus.CLAIMABLE));
-        assertEq(rail.balanceOf(bag), 1500 ether);
-        assertEq(qRail.balanceOf(address(withdrawer)), 500 ether);
+        WithdrawalRequest.Request memory request = requests.requests(requestId);
+        assertEq(request.amountLocked, 0);
+        assertEq(rail.balanceOf(request.bag), 1500 ether);
+        assertEq(qRail.balanceOf(address(requests)), 0);
+
+        address[] memory assets = new address[](1);
+        assets[0] = address(rail);
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 1500 ether;
 
         vm.prank(user);
-        requests.claim(requestId, user);
+        IBag(request.bag).claim(assets, payable(user), amounts);
         assertEq(rail.balanceOf(user), 1500 ether);
     }
 

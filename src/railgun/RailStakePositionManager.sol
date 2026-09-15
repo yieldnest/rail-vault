@@ -6,7 +6,6 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {QueuedRail} from "../QueuedRail.sol";
 import {IRailgunStaking} from "./IRailgunStaking.sol";
 
 contract RailStakePositionManager is AccessControl, Pausable {
@@ -31,7 +30,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
 
     IERC20 public immutable rail;
     IRailgunStaking public immutable staking;
-    QueuedRail public immutable queuedRail;
     address public strategy;
     address public exitSystem;
 
@@ -46,10 +44,9 @@ contract RailStakePositionManager is AccessControl, Pausable {
     event PositionQueued(uint256 indexed stakeId, uint256 principal, uint256 locktime);
     event PositionClaimed(uint256 indexed stakeId, uint256 principal, address indexed receiver);
 
-    constructor(address admin, IERC20 rail_, IRailgunStaking staking_, QueuedRail queuedRail_) {
+    constructor(address admin, IERC20 rail_, IRailgunStaking staking_) {
         rail = rail_;
         staking = staking_;
-        queuedRail = queuedRail_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
@@ -98,8 +95,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
         position.status = block.timestamp > locktime ? PositionStatus.CLAIMABLE : PositionStatus.UNSTAKING;
         activePrincipal -= principal;
         queuedPrincipal += principal;
-        queuedRail.mint(exitSystem, principal);
-
         emit PositionQueued(stakeId, principal, locktime);
         return principal;
     }

@@ -3,10 +3,10 @@ pragma solidity ^0.8.24;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 
 import {StakedRailStrategy} from "../StakedRailStrategy.sol";
 import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
-import {RailWithdrawalRequest} from "./RailWithdrawalRequest.sol";
 import {RailWithdrawer} from "./RailWithdrawer.sol";
 
 contract RailWithdrawalResolver is AccessControl {
@@ -14,20 +14,18 @@ contract RailWithdrawalResolver is AccessControl {
 
     StakedRailStrategy public immutable stRail;
     RailStakePositionManager public immutable positionManager;
-    RailWithdrawalRequest public immutable withdrawalRequest;
+    WithdrawalRequest public immutable withdrawalRequest;
     RailWithdrawer public immutable withdrawer;
 
-    uint256 public nextRequestToAllocate = 1;
-    uint256 public nextRequestToResolve = 1;
+    uint256 public nextRequestToResolve;
 
-    event RequestAllocated(uint256 indexed requestId, uint256 shares, uint256 railEntitlement);
     event RequestResolved(uint256 indexed requestId, uint256 railAmount);
 
     constructor(
         address admin,
         StakedRailStrategy stRail_,
         RailStakePositionManager positionManager_,
-        RailWithdrawalRequest withdrawalRequest_,
+        WithdrawalRequest withdrawalRequest_,
         RailWithdrawer withdrawer_
     ) {
         stRail = stRail_;
@@ -37,26 +35,6 @@ contract RailWithdrawalResolver is AccessControl {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
-    function allocateRequests(uint256 maxRequests) external onlyRole(KEEPER_ROLE) returns (uint256 allocated) {
-        while (allocated < maxRequests && nextRequestToAllocate < withdrawalRequest.nextRequestId()) {
-            uint256 requestId = nextRequestToAllocate;
-            if (!withdrawalRequest.isPending(requestId)) {
-                nextRequestToAllocate++;
-                continue;
-            }
-
-            (uint256 shares,,,,) = withdrawalRequest.requests(requestId);
-            uint256 railEntitlement = stRail.previewRedeem(shares);
-            if (withdrawer.unreservedQRAIL() < railEntitlement) break;
-
-            withdrawer.reserve(requestId, railEntitlement);
-            withdrawalRequest.markQueued(requestId, railEntitlement);
-            nextRequestToAllocate++;
-            allocated++;
-            emit RequestAllocated(requestId, shares, railEntitlement);
-        }
-    }
-
     function claimMaturedPositions(uint256[] calldata stakeIds) external onlyRole(KEEPER_ROLE) returns (uint256) {
         return positionManager.claimMaturedPositions(stakeIds, address(withdrawer));
     }
@@ -64,19 +42,23 @@ contract RailWithdrawalResolver is AccessControl {
     function resolveRequests(uint256 maxRequests) external onlyRole(KEEPER_ROLE) returns (uint256 resolved) {
         while (resolved < maxRequests && nextRequestToResolve < withdrawalRequest.nextRequestId()) {
             uint256 requestId = nextRequestToResolve;
-            if (!withdrawalRequest.isQueued(requestId)) {
+            if (!withdrawalRequest.requestExists(requestId)) {
                 nextRequestToResolve++;
                 continue;
             }
 
-            (, uint256 railEntitlement,, address bag,) = withdrawalRequest.requests(requestId);
-            if (railEntitlement == 0) revert EmptyEntitlement();
+            WithdrawalRequest.Request memory request = withdrawalRequest.requests(requestId);
+            uint256 railAmount = request.amountLocked;
+            if (railAmount == 0) {
+                nextRequestToResolve++;
+                continue;
+            }
+            if (IERC20(withdrawer.rail()).balanceOf(address(withdrawer)) < railAmount) break;
 
-            withdrawer.settle(requestId, bag, railEntitlement);
-            withdrawalRequest.markResolved(requestId, railEntitlement);
+            withdrawalRequest.resolveWithdrawalRequest(requestId, address(withdrawer.rail()), railAmount);
             nextRequestToResolve++;
             resolved++;
-            emit RequestResolved(requestId, railEntitlement);
+            emit RequestResolved(requestId, railAmount);
         }
     }
 
@@ -96,17 +78,15 @@ contract RailWithdrawalResolver is AccessControl {
     function unstakingDeficit() public view returns (uint256 deficit) {
         uint256 demand;
         uint256 nextRequestId = withdrawalRequest.nextRequestId();
-        for (uint256 requestId = nextRequestToAllocate; requestId < nextRequestId; requestId++) {
-            if (!withdrawalRequest.isPending(requestId)) continue;
-            (uint256 shares,,,,) = withdrawalRequest.requests(requestId);
-            demand += stRail.previewRedeem(shares);
+        for (uint256 requestId = nextRequestToResolve; requestId < nextRequestId; requestId++) {
+            if (!withdrawalRequest.requestExists(requestId)) continue;
+            WithdrawalRequest.Request memory request = withdrawalRequest.requests(requestId);
+            demand += request.amountLocked;
         }
 
-        uint256 available = withdrawer.unreservedQRAIL() + IERC20(withdrawer.rail()).balanceOf(address(withdrawer));
+        uint256 available = IERC20(withdrawer.rail()).balanceOf(address(withdrawer));
         if (demand > available) {
             deficit = demand - available;
         }
     }
-
-    error EmptyEntitlement();
 }

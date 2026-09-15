@@ -4,12 +4,15 @@ pragma solidity ^0.8.24;
 import {Script} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {Bag} from "@yieldnest-vault-withdrawals/Bag.sol";
+import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
+import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
+import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
 
-import {QueuedRail} from "../src/QueuedRail.sol";
+import {QueuedRailStrategy} from "../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../src/StakedRailStrategy.sol";
 import {IRailgunStaking} from "../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../src/railgun/RailStakePositionManager.sol";
-import {RailWithdrawalRequest} from "../src/withdrawals/RailWithdrawalRequest.sol";
 import {RailWithdrawer} from "../src/withdrawals/RailWithdrawer.sol";
 import {RailWithdrawalResolver} from "../src/withdrawals/RailWithdrawalResolver.sol";
 
@@ -25,10 +28,11 @@ contract DeployStakedRail is Script {
     }
 
     struct Deployed {
-        QueuedRail qRail;
+        QueuedRailStrategy qRail;
         RailStakePositionManager manager;
         StakedRailStrategy strategy;
-        RailWithdrawalRequest withdrawalRequest;
+        BeaconProxyFactory bagFactory;
+        WithdrawalRequest withdrawalRequest;
         RailWithdrawer withdrawer;
         RailWithdrawalResolver resolver;
     }
@@ -62,6 +66,7 @@ contract DeployStakedRail is Script {
         string memory json = "staked-rail";
         vm.serializeAddress(json, "qRail", address(deployed.qRail));
         vm.serializeAddress(json, "positionManager", address(deployed.manager));
+        vm.serializeAddress(json, "bagFactory", address(deployed.bagFactory));
         vm.serializeAddress(json, "withdrawalRequest", address(deployed.withdrawalRequest));
         vm.serializeAddress(json, "withdrawer", address(deployed.withdrawer));
         vm.serializeAddress(json, "resolver", address(deployed.resolver));
@@ -70,16 +75,28 @@ contract DeployStakedRail is Script {
     }
 
     function _deploy(Config memory config) private returns (Deployed memory deployed) {
-        deployed.qRail = new QueuedRail(config.admin, config.rail);
-        deployed.manager =
-            new RailStakePositionManager(config.admin, IERC20(config.rail), IRailgunStaking(config.staking), deployed.qRail);
+        QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
+        deployed.qRail = QueuedRailStrategy(
+            payable(
+                address(
+                    new TransparentUpgradeableProxy(
+                        address(qRailImplementation),
+                        config.admin,
+                        abi.encodeCall(QueuedRailStrategy.initialize, (config.admin, config.rail))
+                    )
+                )
+            )
+        );
 
-        StakedRailStrategy implementation = new StakedRailStrategy();
+        deployed.manager =
+            new RailStakePositionManager(config.admin, IERC20(config.rail), IRailgunStaking(config.staking));
+
+        StakedRailStrategy strategyImplementation = new StakedRailStrategy();
         deployed.strategy = StakedRailStrategy(
             payable(
                 address(
                     new TransparentUpgradeableProxy(
-                        address(implementation),
+                        address(strategyImplementation),
                         config.admin,
                         abi.encodeCall(
                             StakedRailStrategy.initialize,
@@ -87,6 +104,7 @@ contract DeployStakedRail is Script {
                                 config.admin,
                                 config.rail,
                                 deployed.manager,
+                                deployed.qRail,
                                 config.stakeChunkSize,
                                 config.minimumStakeAmount,
                                 config.targetIdleRail,
@@ -98,8 +116,64 @@ contract DeployStakedRail is Script {
             )
         );
 
-        deployed.withdrawalRequest = new RailWithdrawalRequest(config.admin, deployed.strategy, IERC20(config.rail));
-        deployed.withdrawer = new RailWithdrawer(config.admin, IERC20(config.rail), deployed.qRail, deployed.withdrawalRequest);
+        Bag bagImplementation = new Bag();
+        BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
+        deployed.bagFactory = BeaconProxyFactory(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(bagFactoryImplementation),
+                    config.admin,
+                    abi.encodeCall(
+                        BeaconProxyFactory.initialize,
+                        (address(bagImplementation), config.admin, config.admin, config.admin)
+                    )
+                )
+            )
+        );
+
+        MinAmountRequestPolicy requestPolicy = new MinAmountRequestPolicy(1);
+        WithdrawalRequest requestImplementation = new WithdrawalRequest();
+        deployed.withdrawalRequest = WithdrawalRequest(
+            payable(
+                address(
+                    new TransparentUpgradeableProxy(
+                        address(requestImplementation),
+                        config.admin,
+                        abi.encodeCall(
+                            WithdrawalRequest.initialize,
+                            (
+                                address(deployed.qRail),
+                                config.admin,
+                                config.admin,
+                                config.admin,
+                                config.admin,
+                                address(deployed.bagFactory),
+                                config.admin,
+                                address(requestPolicy),
+                                uint256(1024)
+                            )
+                        )
+                    )
+                )
+            )
+        );
+
+        RailWithdrawer withdrawerImplementation = new RailWithdrawer();
+        deployed.withdrawer = RailWithdrawer(
+            payable(
+                address(
+                    new TransparentUpgradeableProxy(
+                        address(withdrawerImplementation),
+                        config.admin,
+                        abi.encodeCall(
+                            RailWithdrawer.initialize,
+                            (address(deployed.qRail), address(deployed.withdrawalRequest), config.rail)
+                        )
+                    )
+                )
+            )
+        );
+
         deployed.resolver =
             new RailWithdrawalResolver(config.admin, deployed.strategy, deployed.manager, deployed.withdrawalRequest, deployed.withdrawer);
     }
@@ -107,12 +181,12 @@ contract DeployStakedRail is Script {
     function _wire(Config memory config, Deployed memory deployed) private {
         deployed.manager.setStrategy(address(deployed.strategy));
         deployed.manager.setExitSystem(address(deployed.withdrawer));
-        deployed.qRail.grantRole(deployed.qRail.MINTER_ROLE(), address(deployed.manager));
+        deployed.qRail.grantRole(deployed.qRail.MINTER_ROLE(), address(deployed.strategy));
         deployed.qRail.grantRole(deployed.qRail.BURNER_ROLE(), address(deployed.withdrawer));
         deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.resolver));
-        deployed.strategy.grantRole(deployed.strategy.WITHDRAWAL_REQUEST_ROLE(), address(deployed.withdrawalRequest));
+        deployed.bagFactory.grantRole(deployed.bagFactory.CREATOR_ROLE(), address(deployed.withdrawalRequest));
+        deployed.withdrawalRequest.setWithdrawer(address(deployed.withdrawer));
         deployed.withdrawalRequest.grantRole(deployed.withdrawalRequest.RESOLVER_ROLE(), address(deployed.resolver));
-        deployed.withdrawer.grantRole(deployed.withdrawer.RESOLVER_ROLE(), address(deployed.resolver));
         deployed.resolver.grantRole(deployed.resolver.KEEPER_ROLE(), config.admin);
     }
 

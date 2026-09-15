@@ -1,5 +1,6 @@
 @yieldnest-vault=lib/yieldnest-vault/src
 @yieldnest-vault-script=lib/yieldnest-vault/script
+@yieldnest-vault-withdrawals=lib/yieldnest-vault-withdrawals/src
 lib/openzeppelin-contracts/=lib/yieldnest-vault/lib/openzeppelin-contracts/
 lib/openzeppelin-contracts-upgradeable/=lib/yieldnest-vault/lib/openzeppelin-contracts-upgradeable/
 @openzeppelin/contracts/=lib/yieldnest-vault/lib/openzeppelin-contracts/contracts/
@@ -7,3 +8,5 @@ lib/openzeppelin-contracts-upgradeable/=lib/yieldnest-vault/lib/openzeppelin-con
 forge-std/=lib/yieldnest-vault/lib/forge-std/src/
 lib/yieldnest-vault:src=lib/yieldnest-vault/src
 lib/yieldnest-vault:script=lib/yieldnest-vault/script
+lib/yieldnest-vault-withdrawals:src=lib/yieldnest-vault-withdrawals/src
+lib/yieldnest-vault-withdrawals:lib/yieldnest-vault=lib/yieldnest-vault

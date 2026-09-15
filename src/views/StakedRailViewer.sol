@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {StakedRailStrategy} from "../StakedRailStrategy.sol";
 import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
-import {RailWithdrawalRequest} from "../withdrawals/RailWithdrawalRequest.sol";
+import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 
 contract StakedRailViewer {
     enum RailRequestStatus {
@@ -25,15 +25,16 @@ contract StakedRailViewer {
         totalAssets_ = strategy.totalBaseAssets();
     }
 
-    function requestStatus(RailWithdrawalRequest request, uint256 requestId)
+    function requestStatus(WithdrawalRequest request, uint256 requestId)
         external
         view
         returns (RailRequestStatus)
     {
-        (,,,, RailWithdrawalRequest.RequestStatus status) = request.requests(requestId);
-        if (status == RailWithdrawalRequest.RequestStatus.PENDING) return RailRequestStatus.PENDING;
-        if (status == RailWithdrawalRequest.RequestStatus.QUEUED) return RailRequestStatus.QUEUED;
-        if (status == RailWithdrawalRequest.RequestStatus.CLAIMABLE) return RailRequestStatus.CLAIMABLE;
-        return RailRequestStatus.CLAIMED;
+        WithdrawalRequest.Request memory withdrawal = request.requests(requestId);
+        if (withdrawal.amountLocked != 0) return RailRequestStatus.QUEUED;
+        for (uint256 i = 0; i < withdrawal.assetsRedeemed.length; i++) {
+            if (withdrawal.assetsRedeemed[i] != address(0)) return RailRequestStatus.CLAIMABLE;
+        }
+        return RailRequestStatus.PENDING;
     }
 }

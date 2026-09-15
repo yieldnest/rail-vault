@@ -6,6 +6,7 @@ import {BaseStrategy} from "@yieldnest-vault/strategy/BaseStrategy.sol";
 import {VaultLib} from "@yieldnest-vault/library/VaultLib.sol";
 
 import {RailProvider} from "./RailProvider.sol";
+import {QueuedRailStrategy} from "./QueuedRailStrategy.sol";
 import {RailStakePositionManager} from "./railgun/RailStakePositionManager.sol";
 
 contract StakedRailStrategy is BaseStrategy {
@@ -15,9 +16,9 @@ contract StakedRailStrategy is BaseStrategy {
 
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
     bytes32 public constant CONFIG_MANAGER_ROLE = keccak256("CONFIG_MANAGER_ROLE");
-    bytes32 public constant WITHDRAWAL_REQUEST_ROLE = keccak256("WITHDRAWAL_REQUEST_ROLE");
 
     RailStakePositionManager public positionManager;
+    QueuedRailStrategy public queuedRail;
     uint256 public stakeChunkSize;
     uint256 public minimumStakeAmount;
     uint256 public targetIdleRail;
@@ -32,6 +33,7 @@ contract StakedRailStrategy is BaseStrategy {
         address admin,
         address rail,
         RailStakePositionManager positionManager_,
+        QueuedRailStrategy queuedRail_,
         uint256 stakeChunkSize_,
         uint256 minimumStakeAmount_,
         uint256 targetIdleRail_,
@@ -43,6 +45,7 @@ contract StakedRailStrategy is BaseStrategy {
         VaultLib.setProvider(address(new RailProvider(rail)));
 
         positionManager = positionManager_;
+        queuedRail = queuedRail_;
         _setStakingConfig(stakeChunkSize_, minimumStakeAmount_, targetIdleRail_, maxActivePositions_);
 
         emit PositionManagerSet(address(positionManager_));
@@ -85,8 +88,12 @@ contract StakedRailStrategy is BaseStrategy {
         }
     }
 
-    function burnLockedShares(address owner, uint256 shares) external onlyRole(WITHDRAWAL_REQUEST_ROLE) {
-        _burn(owner, shares);
+    function exitToQueuedRail(uint256 shares, address receiver) external returns (uint256 assets) {
+        if (shares == 0) revert ZeroShares();
+        if (receiver == address(0)) revert ZeroAddress();
+        assets = previewRedeem(shares);
+        _burn(msg.sender, shares);
+        queuedRail.mintQueuedRail(receiver, assets);
     }
 
     function setStakingConfig(
@@ -115,4 +122,5 @@ contract StakedRailStrategy is BaseStrategy {
     }
 
     error InvalidStakingConfig();
+    error ZeroShares();
 }

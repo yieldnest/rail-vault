@@ -6,11 +6,12 @@ Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 ## Layout
 
 - `lib/yieldnest-vault`: YieldNest vault submodule.
-- `lib/yieldnest-vault-withdrawals`: YieldNest withdrawals submodule. At the current pinned revision it only contains a README, so this repo includes minimal local withdrawal request / Bag / resolver contracts that follow the requested model.
+- `lib/yieldnest-vault-withdrawals`: YieldNest withdrawal request, Bag, factory, policy, and withdrawer interfaces.
 - `src/StakedRailStrategy.sol`: YieldNest `BaseStrategy` vault for stRAIL, with RAIL as the base asset and synchronous exits disabled.
-- `src/railgun/RailStakePositionManager.sol`: records RAILGUN stake IDs, tracks active and queued principal, mints qRAIL after successful unstaking queueing, and claims matured stakes.
-- `src/QueuedRail.sol`: ERC20 qRAIL, minted only for queued RAIL principal.
-- `src/withdrawals/`: local request NFT, Bag, withdrawer, and resolver contracts for FIFO full-fill exits.
+- `src/QueuedRailStrategy.sol`: non-depositable YieldNest `BaseStrategy` qRAIL token used by the withdrawal system.
+- `src/railgun/RailStakePositionManager.sol`: records RAILGUN stake IDs, tracks active/queued principal, queues full positions, and claims matured stakes.
+- `src/withdrawals/RailWithdrawer.sol`: RAIL-specific adapter plugged into YieldNest `WithdrawalRequest`.
+- `src/withdrawals/RailWithdrawalResolver.sol`: FIFO resolver/keeper helper for queueing stake chunks, claiming matured RAIL, and resolving qRAIL withdrawal requests.
 - `src/views/StakedRailViewer.sol`: lightweight status/accounting viewer.
 - `script/DeployStakedRail.s.sol`: proxy deployment and role wiring.
 
@@ -40,4 +41,6 @@ Optional deployment environment variables:
 
 ## Notes
 
-The root `src/` and `script/` directories include compatibility symlinks for YieldNest's root-relative imports (`src/...` and `script/Contracts.sol`) so Foundry's compiler and lint resolver agree without modifying the submodule.
+YieldNest dependencies are resolved with context remappings, including
+`lib/yieldnest-vault:src=lib/yieldnest-vault/src` and
+`lib/yieldnest-vault-withdrawals:src=lib/yieldnest-vault-withdrawals/src`, so no root-level compatibility symlinks are required.
