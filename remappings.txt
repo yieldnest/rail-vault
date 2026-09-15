@@ -1,5 +1,3 @@
-src/=lib/yieldnest-vault/src/
-script/=lib/yieldnest-vault/script/
 @yieldnest-vault/=lib/yieldnest-vault/
 lib/openzeppelin-contracts/=lib/yieldnest-vault/lib/openzeppelin-contracts/
 lib/openzeppelin-contracts-upgradeable/=lib/yieldnest-vault/lib/openzeppelin-contracts-upgradeable/
