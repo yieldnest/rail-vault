@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IERC20Metadata as IERC20, SafeERC20} from "@yieldnest-vault/src/Common.sol";
-import {BaseStrategy} from "@yieldnest-vault/src/strategy/BaseStrategy.sol";
-import {VaultLib} from "@yieldnest-vault/src/library/VaultLib.sol";
+import {IERC20Metadata as IERC20, SafeERC20} from "@yieldnest-vault/Common.sol";
+import {BaseStrategy} from "@yieldnest-vault/strategy/BaseStrategy.sol";
+import {VaultLib} from "@yieldnest-vault/library/VaultLib.sol";
 
 import {RailProvider} from "./RailProvider.sol";
 import {RailStakePositionManager} from "./railgun/RailStakePositionManager.sol";
