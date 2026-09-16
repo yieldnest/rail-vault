@@ -84,7 +84,7 @@ contract RailWithdrawalResolver is AccessControl {
             demand += request.amountLocked;
         }
 
-        uint256 available = IERC20(withdrawer.rail()).balanceOf(address(withdrawer));
+        uint256 available = IERC20(withdrawer.rail()).balanceOf(address(withdrawer)) + positionManager.queuedPrincipal();
         if (demand > available) {
             deficit = demand - available;
         }
