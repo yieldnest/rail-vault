@@ -17,26 +17,6 @@ contract QueuedRailStrategy is BaseStrategy {
         VaultLib.setProvider(address(new RailProvider(rail)));
     }
 
-    function maxDeposit(address) public pure override returns (uint256) {
-        return 0;
-    }
-
-    function maxMint(address) public pure override returns (uint256) {
-        return 0;
-    }
-
-    function deposit(uint256, address) public pure override returns (uint256) {
-        revert DepositsDisabled();
-    }
-
-    function mint(uint256, address) public pure override returns (uint256) {
-        revert DepositsDisabled();
-    }
-
-    function depositAsset(address, uint256, address) public pure override returns (uint256) {
-        revert DepositsDisabled();
-    }
-
     function processorMintShares(address receiver, uint256 amount) external {
         if (msg.sender != address(this)) revert OnlyProcessorSelfCall();
         _mint(receiver, amount);
@@ -63,6 +43,5 @@ contract QueuedRailStrategy is BaseStrategy {
         return 0;
     }
 
-    error DepositsDisabled();
     error OnlyProcessorSelfCall();
 }
