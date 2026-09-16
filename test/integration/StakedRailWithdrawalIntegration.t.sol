@@ -12,18 +12,20 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 
 import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
+import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
 import {RailWithdrawer} from "../../src/withdrawals/RailWithdrawer.sol";
 import {RailWithdrawalResolver} from "../../src/withdrawals/RailWithdrawalResolver.sol";
-import {MockERC20} from "../mocks/MockERC20.sol";
-import {MockRailgunStaking} from "../mocks/MockRailgunStaking.sol";
 
 contract StakedRailWithdrawalIntegrationTest is Test {
+    address internal constant RAILGUN_STAKING = 0xEE6A649Aa3766bD117e12C161726b693A1B2Ee20;
+
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
 
-    MockERC20 internal rail;
-    MockRailgunStaking internal staking;
+    bool internal forkAvailable;
+    IERC20 internal rail;
+    IRailgunStaking internal staking;
     QueuedRailStrategy internal qRail;
     RailStakePositionManager internal manager;
     StakedRailStrategy internal strategy;
@@ -33,8 +35,21 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     RailWithdrawalResolver internal resolver;
 
     function setUp() external {
-        rail = new MockERC20("RAIL", "RAIL", 18);
-        staking = new MockRailgunStaking(rail);
+        string memory rpcUrl = vm.envOr("ETH_MAINNET_RPC_URL", string(""));
+        if (bytes(rpcUrl).length == 0) {
+            return;
+        }
+
+        uint256 forkBlock = vm.envOr("RAIL_FORK_BLOCK", uint256(0));
+        if (forkBlock == 0) {
+            vm.createSelectFork(rpcUrl);
+        } else {
+            vm.createSelectFork(rpcUrl, forkBlock);
+        }
+        forkAvailable = true;
+
+        staking = IRailgunStaking(RAILGUN_STAKING);
+        rail = IERC20(staking.stakingToken());
 
         QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
         qRail = QueuedRailStrategy(
@@ -139,6 +154,12 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     }
 
     function testFullStakedRailToRequestNftToRailClaimFlow() external {
+        vm.skip(!forkAvailable, "ETH_MAINNET_RPC_URL is not set");
+
+        assertEq(address(staking), RAILGUN_STAKING);
+        assertEq(staking.STAKE_LOCKTIME(), 30 days);
+        assertEq(staking.stakingToken(), address(rail));
+
         _deposit(alice, 5000 ether);
 
         assertEq(strategy.rebalanceStaking(10), 4);
@@ -192,7 +213,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     }
 
     function _deposit(address account, uint256 amount) internal {
-        rail.mint(account, amount);
+        deal(address(rail), account, amount);
         vm.startPrank(account);
         rail.approve(address(strategy), amount);
         strategy.deposit(amount, account);
