@@ -30,7 +30,14 @@ contract RailWithdrawer is BaseWithdrawer {
     {
         if (asset != address(rail)) revert UnsupportedAsset(asset);
         if (rail.balanceOf(address(this)) < assets) revert InsufficientRAIL();
-        queuedRail.burnQueuedRail(owner, assets);
+
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(queuedRail);
+        data[0] = abi.encodeCall(QueuedRailStrategy.processorBurnShares, (owner, assets));
+        queuedRail.processor(targets, values, data);
+
         rail.safeTransfer(receiver, assets);
         emit Settled(requestId, receiver, assets);
         return assets;

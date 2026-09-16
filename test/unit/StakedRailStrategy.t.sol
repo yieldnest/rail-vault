@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {IVault} from "@yieldnest-vault/interface/IVault.sol";
+import {IValidator} from "@yieldnest-vault/interface/IValidator.sol";
 import {Bag} from "@yieldnest-vault-withdrawals/Bag.sol";
 import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
@@ -12,6 +14,8 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 
 import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
+import {StakedRailExitProcessor} from "../../src/processors/StakedRailExitProcessor.sol";
+import {StakedRailStakingProcessor} from "../../src/processors/StakedRailStakingProcessor.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
 import {RailWithdrawer} from "../../src/withdrawals/RailWithdrawer.sol";
 import {RailWithdrawalResolver} from "../../src/withdrawals/RailWithdrawalResolver.sol";
@@ -30,6 +34,8 @@ contract StakedRailStrategyTest is Test {
     WithdrawalRequest requests;
     RailWithdrawer withdrawer;
     RailWithdrawalResolver resolver;
+    StakedRailStakingProcessor stakingProcessor;
+    StakedRailExitProcessor exitProcessor;
 
     function setUp() external {
         rail = new MockERC20("RAIL", "RAIL", 18);
@@ -58,8 +64,7 @@ contract StakedRailStrategyTest is Test {
                         address(implementation),
                         makeAddr("stRailProxyAdmin"),
                         abi.encodeCall(
-                            StakedRailStrategy.initialize,
-                            (address(this), address(rail), manager, qRail, 1000 ether, 1000 ether, 1000 ether, 100)
+                            StakedRailStrategy.initialize, (address(this), address(rail), manager)
                         )
                     )
                 )
@@ -122,17 +127,24 @@ contract StakedRailStrategyTest is Test {
         );
 
         resolver = new RailWithdrawalResolver(address(this), strategy, manager, requests, withdrawer);
+        stakingProcessor =
+            new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether, 1000 ether, 1000 ether, 100);
+        exitProcessor = new StakedRailExitProcessor(strategy, qRail);
 
         manager.setStrategy(address(strategy));
         manager.setExitSystem(address(withdrawer));
-        qRail.grantRole(qRail.MINTER_ROLE(), address(strategy));
-        qRail.grantRole(qRail.BURNER_ROLE(), address(withdrawer));
+        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
+        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
+        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(exitProcessor));
+        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(withdrawer));
+        strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
+        qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
+        _setProcessorRules();
         manager.grantRole(manager.KEEPER_ROLE(), address(resolver));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
         resolver.grantRole(resolver.KEEPER_ROLE(), address(this));
-        strategy.grantRole(strategy.KEEPER_ROLE(), address(this));
         strategy.grantRole(strategy.UNPAUSER_ROLE(), address(this));
         strategy.unpause();
     }
@@ -140,7 +152,7 @@ contract StakedRailStrategyTest is Test {
     function testDepositAndChunkedStakingAccounting() external {
         _deposit(user, 5000 ether);
 
-        uint256 operations = strategy.rebalanceStaking(10);
+        uint256 operations = stakingProcessor.rebalanceStaking(10);
 
         assertEq(operations, 4);
         assertEq(rail.balanceOf(address(strategy)), 1000 ether);
@@ -153,10 +165,10 @@ contract StakedRailStrategyTest is Test {
 
     function testQueuedRailUsesExistingWithdrawalRequestLifecycle() external {
         _deposit(user, 5000 ether);
-        strategy.rebalanceStaking(10);
+        stakingProcessor.rebalanceStaking(10);
 
         vm.startPrank(user);
-        strategy.exitToQueuedRail(1500 ether, user);
+        exitProcessor.exitToQueuedRail(1500 ether, user);
         qRail.approve(address(requests), 1500 ether);
         uint256 requestId = requests.requestWithdrawal(1500 ether, user, "");
         vm.stopPrank();
@@ -195,5 +207,20 @@ contract StakedRailStrategyTest is Test {
         rail.approve(address(strategy), amount);
         strategy.deposit(amount, account);
         vm.stopPrank();
+    }
+
+    function _setProcessorRules() internal {
+        IVault.FunctionRule memory rule = _emptyRule();
+        strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
+        strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
+        strategy.setProcessorRule(address(strategy), StakedRailStrategy.processorBurnShares.selector, rule);
+        qRail.setProcessorRule(address(qRail), QueuedRailStrategy.processorMintShares.selector, rule);
+        qRail.setProcessorRule(address(qRail), QueuedRailStrategy.processorBurnShares.selector, rule);
+    }
+
+    function _emptyRule() internal pure returns (IVault.FunctionRule memory rule) {
+        rule.isActive = true;
+        rule.paramRules = new IVault.ParamRule[](0);
+        rule.validator = IValidator(address(0));
     }
 }
