@@ -495,27 +495,14 @@ function rebalanceStaking(uint256 maxOperations)
 
 It preserves the idle buffer and creates stake chunks.
 
-Exit keeper:
+The exit processor queues complete stake positions before minting the
+corresponding qRAIL to stRAIL. It then redeems the user's stRAIL shares
+for qRAIL, which the user can submit to the withdrawal queue.
 
-``` solidity
-function rebalanceExits(uint256 maxPositions)
-```
-
-Conceptually:
-
-``` text
-requiredUnstaking =
-    outstanding withdrawal demand
-  - liquid exit RAIL
-  - already queued RAIL
-  - already claimable RAIL
-```
-
-Queue complete positions until the deficit is covered. Use a
-deterministic V1 selection rule such as oldest active stake first.
-
-Excess queued liquidity remains part of strategy assets and may service
-later requests or eventually be restaked.
+Excess qRAIL from whole-position exits remains in stRAIL for later exits.
+No separate exit rebalancing is needed: withdrawal requests already hold
+backed qRAIL. The resolver only claims matured positions into qRAIL and
+resolves requests in FIFO order as RAIL becomes available.
 
 ## Rewards
 

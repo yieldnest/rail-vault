@@ -186,7 +186,6 @@ contract DeployStakedRail is Script {
         deployed.resolver =
             new RailWithdrawalResolver(
                 config.admin,
-                deployed.strategy,
                 deployed.qRail,
                 deployed.manager,
                 deployed.withdrawalRequest,
@@ -218,7 +217,6 @@ contract DeployStakedRail is Script {
         deployed.manager.setExitSystem(address(deployed.withdrawer));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.stakingProcessor));
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.exitProcessor));
-        deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.resolver));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_MANAGER_ROLE(), config.admin);
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_MANAGER_ROLE(), config.admin);
         _setProcessorRules(config, deployed);

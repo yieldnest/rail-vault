@@ -6,14 +6,12 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 
 import {QueuedRailStrategy} from "../QueuedRailStrategy.sol";
-import {StakedRailStrategy} from "../StakedRailStrategy.sol";
 import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
 import {RailWithdrawer} from "./RailWithdrawer.sol";
 
 contract RailWithdrawalResolver is AccessControl {
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
 
-    StakedRailStrategy public immutable stRail;
     QueuedRailStrategy public immutable qRail;
     RailStakePositionManager public immutable positionManager;
     WithdrawalRequest public immutable withdrawalRequest;
@@ -25,13 +23,11 @@ contract RailWithdrawalResolver is AccessControl {
 
     constructor(
         address admin,
-        StakedRailStrategy stRailAddress,
         QueuedRailStrategy qRailAddress,
         RailStakePositionManager positionManagerAddress,
         WithdrawalRequest withdrawalRequestAddress,
         RailWithdrawer withdrawerAddress
     ) {
-        stRail = stRailAddress;
         qRail = qRailAddress;
         positionManager = positionManagerAddress;
         withdrawalRequest = withdrawalRequestAddress;
@@ -64,44 +60,5 @@ contract RailWithdrawalResolver is AccessControl {
             resolved++;
             emit RequestResolved(requestId, railAmount);
         }
-    }
-
-    function rebalanceExits(uint256 maxPositions) external onlyRole(KEEPER_ROLE) returns (uint256 queued) {
-        uint256 deficit = unstakingDeficit();
-        if (deficit == 0) return 0;
-
-        uint256[] memory activeStakeIds = positionManager.activeStakeIdsList();
-        uint256 queuedAmount;
-        for (uint256 i = 0; i < activeStakeIds.length && queued < maxPositions; i++) {
-            uint256 queuedPrincipal = positionManager.queuePosition(activeStakeIds[i]);
-            _mintQueuedRailToStrategy(queuedPrincipal);
-            queuedAmount += queuedPrincipal;
-            queued++;
-            if (queuedAmount >= deficit) break;
-        }
-    }
-
-    function unstakingDeficit() public view returns (uint256 deficit) {
-        uint256 demand;
-        uint256 nextRequestId = withdrawalRequest.nextRequestId();
-        for (uint256 requestId = nextRequestToResolve; requestId < nextRequestId; requestId++) {
-            if (!withdrawalRequest.requestExists(requestId)) continue;
-            WithdrawalRequest.Request memory request = withdrawalRequest.requests(requestId);
-            demand += request.amountLocked;
-        }
-
-        uint256 available = IERC20(withdrawer.rail()).balanceOf(address(qRail)) + positionManager.queuedPrincipal();
-        if (demand > available) {
-            deficit = demand - available;
-        }
-    }
-
-    function _mintQueuedRailToStrategy(uint256 amount) internal {
-        address[] memory targets = new address[](1);
-        uint256[] memory values = new uint256[](1);
-        bytes[] memory data = new bytes[](1);
-        targets[0] = address(qRail);
-        data[0] = abi.encodeCall(QueuedRailStrategy.mintQueuedRail, (address(stRail), amount));
-        qRail.processor(targets, values, data);
     }
 }

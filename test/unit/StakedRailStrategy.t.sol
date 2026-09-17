@@ -127,7 +127,7 @@ contract StakedRailStrategyTest is Test {
         );
 
         resolver =
-            new RailWithdrawalResolver(address(this), strategy, qRail, manager, requests, withdrawer);
+            new RailWithdrawalResolver(address(this), qRail, manager, requests, withdrawer);
         stakingProcessor =
             new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether, 1000 ether, 1000 ether, 100);
         exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
@@ -136,7 +136,6 @@ contract StakedRailStrategyTest is Test {
         manager.setExitSystem(address(withdrawer));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(exitProcessor));
-        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
@@ -206,8 +205,6 @@ contract StakedRailStrategyTest is Test {
         assertEq(qRail.convertToAssets(1500 ether), 1500 ether);
         assertEq(manager.activePrincipal(), 2000 ether);
         assertEq(manager.queuedPrincipal(), 2000 ether);
-        assertEq(resolver.unstakingDeficit(), 0);
-        assertEq(resolver.rebalanceExits(2), 0);
 
         uint256[] memory stakeIds = manager.queuedStakeIdsList();
         vm.warp(block.timestamp + 30 days + 1);
