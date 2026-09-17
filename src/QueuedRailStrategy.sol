@@ -21,7 +21,7 @@ contract QueuedRailStrategy is BaseStrategy {
     }
 
     function computeTotalAssets() public view override returns (uint256 totalBaseBalance) {
-        totalBaseBalance = IERC20(asset()).balanceOf(address(this));
+        totalBaseBalance = super.computeTotalAssets();
         if (address(positionManager) != address(0)) {
             totalBaseBalance += positionManager.queuedPrincipal();
         }
