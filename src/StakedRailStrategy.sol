@@ -28,7 +28,7 @@ contract StakedRailStrategy is BaseStrategy {
     {
         _initialize(admin, "Staked RAIL", "stRAIL", IERC20(rail).decimals(), true, false, true, 0);
         _addAsset(rail, IERC20(rail).decimals(), true);
-        _addAsset(address(queuedRailAddress), IERC20(rail).decimals(), true);
+        _addAsset(address(queuedRailAddress), IERC20(rail).decimals(), false);
         _setAssetWithdrawable(rail, false);
         _setAssetWithdrawable(address(queuedRailAddress), true);
         VaultLib.setProvider(address(new RailProvider(rail, address(queuedRailAddress))));
