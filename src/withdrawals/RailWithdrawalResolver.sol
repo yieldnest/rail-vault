@@ -7,7 +7,6 @@ import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.
 
 import {QueuedRailStrategy} from "../QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../StakedRailStrategy.sol";
-import {QueuedRailSharesHook} from "../processors/QueuedRailSharesHook.sol";
 import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
 import {RailWithdrawer} from "./RailWithdrawer.sol";
 
@@ -16,7 +15,6 @@ contract RailWithdrawalResolver is AccessControl {
 
     StakedRailStrategy public immutable stRail;
     QueuedRailStrategy public immutable qRail;
-    QueuedRailSharesHook public immutable qRailSharesHook;
     RailStakePositionManager public immutable positionManager;
     WithdrawalRequest public immutable withdrawalRequest;
     RailWithdrawer public immutable withdrawer;
@@ -29,14 +27,12 @@ contract RailWithdrawalResolver is AccessControl {
         address admin,
         StakedRailStrategy stRailAddress,
         QueuedRailStrategy qRailAddress,
-        QueuedRailSharesHook qRailSharesHookAddress,
         RailStakePositionManager positionManagerAddress,
         WithdrawalRequest withdrawalRequestAddress,
         RailWithdrawer withdrawerAddress
     ) {
         stRail = stRailAddress;
         qRail = qRailAddress;
-        qRailSharesHook = qRailSharesHookAddress;
         positionManager = positionManagerAddress;
         withdrawalRequest = withdrawalRequestAddress;
         withdrawer = withdrawerAddress;
@@ -104,8 +100,8 @@ contract RailWithdrawalResolver is AccessControl {
         address[] memory targets = new address[](1);
         uint256[] memory values = new uint256[](1);
         bytes[] memory data = new bytes[](1);
-        targets[0] = address(qRailSharesHook);
-        data[0] = abi.encodeCall(QueuedRailSharesHook.mintQueuedRail, (address(stRail), amount));
+        targets[0] = address(qRail);
+        data[0] = abi.encodeCall(QueuedRailStrategy.mintQueuedRail, (address(stRail), amount));
         qRail.processor(targets, values, data);
     }
 }

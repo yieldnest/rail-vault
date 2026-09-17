@@ -14,7 +14,6 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 
 import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
-import {QueuedRailSharesHook} from "../../src/processors/QueuedRailSharesHook.sol";
 import {StakedRailExitProcessor} from "../../src/processors/StakedRailExitProcessor.sol";
 import {StakedRailStakingProcessor} from "../../src/processors/StakedRailStakingProcessor.sol";
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
@@ -32,7 +31,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     IERC20 internal rail;
     IRailgunStaking internal staking;
     QueuedRailStrategy internal qRail;
-    QueuedRailSharesHook internal qRailSharesHook;
     RailStakePositionManager internal manager;
     StakedRailStrategy internal strategy;
     BeaconProxyFactory internal bagFactory;
@@ -73,7 +71,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
                 )
             )
         );
-        qRailSharesHook = new QueuedRailSharesHook(qRail);
 
         StakedRailStrategy strategyImplementation = new StakedRailStrategy();
         strategy = StakedRailStrategy(
@@ -146,10 +143,10 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         );
 
         resolver =
-            new RailWithdrawalResolver(address(this), strategy, qRail, qRailSharesHook, manager, requests, withdrawer);
+            new RailWithdrawalResolver(address(this), strategy, qRail, manager, requests, withdrawer);
         stakingProcessor =
             new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether, 1000 ether, 1000 ether, 100);
-        exitProcessor = new StakedRailExitProcessor(strategy, qRail, qRailSharesHook, manager);
+        exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
 
         manager.setStrategy(address(strategy));
         manager.setExitSystem(address(withdrawer));
@@ -158,8 +155,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
-        qRail.grantRole(qRail.HOOKS_MANAGER_ROLE(), address(this));
-        qRail.setHooks(address(qRailSharesHook));
         _setProcessorRules();
         manager.grantRole(manager.KEEPER_ROLE(), address(resolver));
         manager.grantRole(manager.KEEPER_ROLE(), address(exitProcessor));
@@ -242,7 +237,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         IVault.FunctionRule memory rule = _emptyRule();
         strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
-        qRail.setProcessorRule(address(qRailSharesHook), QueuedRailSharesHook.mintQueuedRail.selector, rule);
+        qRail.setProcessorRule(address(qRail), QueuedRailStrategy.mintQueuedRail.selector, rule);
     }
 
     function _emptyRule() internal pure returns (IVault.FunctionRule memory rule) {
