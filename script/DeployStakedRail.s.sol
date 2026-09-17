@@ -14,8 +14,10 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 import {QueuedRailStrategy} from "../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../src/StakedRailStrategy.sol";
 import {QueuedRailSharesHook} from "../src/processors/QueuedRailSharesHook.sol";
+import {RailRewardsProcessor} from "../src/processors/RailRewardsProcessor.sol";
 import {StakedRailExitProcessor} from "../src/processors/StakedRailExitProcessor.sol";
 import {StakedRailStakingProcessor} from "../src/processors/StakedRailStakingProcessor.sol";
+import {IRailgunGovernorRewards} from "../src/railgun/IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../src/railgun/RailStakePositionManager.sol";
 import {RailWithdrawer} from "../src/withdrawals/RailWithdrawer.sol";
@@ -26,6 +28,9 @@ contract DeployStakedRail is Script {
         address admin;
         address rail;
         address staking;
+        address governorRewards;
+        address[] rewardTokens;
+        uint256 nextRewardClaimInterval;
         uint256 stakeChunkSize;
         uint256 minimumStakeAmount;
         uint256 targetIdleRail;
@@ -43,6 +48,7 @@ contract DeployStakedRail is Script {
         RailWithdrawalResolver resolver;
         StakedRailStakingProcessor stakingProcessor;
         StakedRailExitProcessor exitProcessor;
+        RailRewardsProcessor rewardsProcessor;
     }
 
     function run() external {
@@ -50,6 +56,9 @@ contract DeployStakedRail is Script {
             admin: vm.envOr("ADMIN", msg.sender),
             rail: vm.envAddress("RAIL"),
             staking: vm.envAddress("RAIL_STAKING"),
+            governorRewards: vm.envAddress("GOVERNOR_REWARDS"),
+            rewardTokens: vm.envAddress("REWARD_TOKENS", ","),
+            nextRewardClaimInterval: vm.envUint("NEXT_REWARD_CLAIM_INTERVAL"),
             stakeChunkSize: vm.envOr("STAKE_CHUNK_SIZE", uint256(1000 ether)),
             minimumStakeAmount: vm.envOr("MINIMUM_STAKE_AMOUNT", uint256(1000 ether)),
             targetIdleRail: vm.envOr("TARGET_IDLE_RAIL", uint256(1000 ether)),
@@ -81,6 +90,7 @@ contract DeployStakedRail is Script {
         vm.serializeAddress(json, "resolver", address(deployed.resolver));
         vm.serializeAddress(json, "stakingProcessor", address(deployed.stakingProcessor));
         vm.serializeAddress(json, "exitProcessor", address(deployed.exitProcessor));
+        vm.serializeAddress(json, "rewardsProcessor", address(deployed.rewardsProcessor));
         string memory output = vm.serializeAddress(json, "strategy", address(deployed.strategy));
         vm.writeJson(output, string.concat("deployments/staked-rail-", vm.toString(block.chainid), ".json"));
     }
@@ -199,6 +209,13 @@ contract DeployStakedRail is Script {
         );
         deployed.exitProcessor =
             new StakedRailExitProcessor(deployed.strategy, deployed.qRail, deployed.qRailSharesHook, deployed.manager);
+        deployed.rewardsProcessor = new RailRewardsProcessor(
+            config.admin,
+            IRailgunGovernorRewards(config.governorRewards),
+            deployed.manager,
+            _toIERC20Array(config.rewardTokens),
+            config.nextRewardClaimInterval
+        );
     }
 
     function _wire(Config memory config, Deployed memory deployed) private {
@@ -214,6 +231,7 @@ contract DeployStakedRail is Script {
         _setProcessorRules(config, deployed);
         deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.resolver));
         deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.exitProcessor));
+        deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.rewardsProcessor));
         deployed.bagFactory.grantRole(deployed.bagFactory.CREATOR_ROLE(), address(deployed.withdrawalRequest));
         deployed.withdrawalRequest.setWithdrawer(address(deployed.withdrawer));
         deployed.withdrawalRequest.grantRole(deployed.withdrawalRequest.RESOLVER_ROLE(), address(deployed.resolver));
@@ -233,6 +251,13 @@ contract DeployStakedRail is Script {
         rule.isActive = true;
         rule.paramRules = new IVault.ParamRule[](0);
         rule.validator = IValidator(address(0));
+    }
+
+    function _toIERC20Array(address[] memory tokens) private pure returns (IERC20[] memory erc20Tokens) {
+        erc20Tokens = new IERC20[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            erc20Tokens[i] = IERC20(tokens[i]);
+        }
     }
 
     error AdminMustBeBroadcasterForInitialSetup();

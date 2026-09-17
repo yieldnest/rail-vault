@@ -6,6 +6,7 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {IRailgunGovernorRewards} from "./IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "./IRailgunStaking.sol";
 
 contract RailStakePositionManager is AccessControl, Pausable {
@@ -43,6 +44,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
     event PositionCreated(uint256 indexed stakeId, uint256 principal);
     event PositionQueued(uint256 indexed stakeId, uint256 principal, uint256 locktime);
     event PositionClaimed(uint256 indexed stakeId, uint256 principal, address indexed receiver);
+    event RewardsClaimed(address indexed rewards, address indexed receiver, address indexed token, uint256 amount);
 
     constructor(address admin, IERC20 railToken, IRailgunStaking stakingContract) {
         rail = railToken;
@@ -126,6 +128,33 @@ contract RailStakePositionManager is AccessControl, Pausable {
     {
         for (uint256 i = 0; i < stakeIds.length; i++) {
             totalClaimed += claimPosition(stakeIds[i], receiver);
+        }
+    }
+
+    function claimRewards(
+        IRailgunGovernorRewards rewards,
+        IERC20[] calldata tokens,
+        uint256 startingInterval,
+        uint256 endingInterval,
+        uint256[] calldata hints,
+        address receiver
+    ) external onlyRole(KEEPER_ROLE) returns (uint256[] memory claimed) {
+        if (address(rewards) == address(0) || receiver == address(0)) revert ZeroAddress();
+        claimed = new uint256[](tokens.length);
+        uint256[] memory balancesBefore = new uint256[](tokens.length);
+
+        for (uint256 i = 0; i < tokens.length; i++) {
+            balancesBefore[i] = tokens[i].balanceOf(address(this));
+        }
+
+        rewards.claim(tokens, address(this), startingInterval, endingInterval, hints);
+
+        for (uint256 i = 0; i < tokens.length; i++) {
+            claimed[i] = tokens[i].balanceOf(address(this)) - balancesBefore[i];
+            if (claimed[i] != 0) {
+                tokens[i].safeTransfer(receiver, claimed[i]);
+                emit RewardsClaimed(address(rewards), receiver, address(tokens[i]), claimed[i]);
+            }
         }
     }
 
