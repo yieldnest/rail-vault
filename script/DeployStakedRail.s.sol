@@ -13,6 +13,7 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 
 import {QueuedRailStrategy} from "../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../src/StakedRailStrategy.sol";
+import {QueuedRailSharesHook} from "../src/processors/QueuedRailSharesHook.sol";
 import {StakedRailExitProcessor} from "../src/processors/StakedRailExitProcessor.sol";
 import {StakedRailStakingProcessor} from "../src/processors/StakedRailStakingProcessor.sol";
 import {IRailgunStaking} from "../src/railgun/IRailgunStaking.sol";
@@ -33,6 +34,7 @@ contract DeployStakedRail is Script {
 
     struct Deployed {
         QueuedRailStrategy qRail;
+        QueuedRailSharesHook qRailSharesHook;
         RailStakePositionManager manager;
         StakedRailStrategy strategy;
         BeaconProxyFactory bagFactory;
@@ -71,6 +73,7 @@ contract DeployStakedRail is Script {
 
         string memory json = "staked-rail";
         vm.serializeAddress(json, "qRail", address(deployed.qRail));
+        vm.serializeAddress(json, "qRailSharesHook", address(deployed.qRailSharesHook));
         vm.serializeAddress(json, "positionManager", address(deployed.manager));
         vm.serializeAddress(json, "bagFactory", address(deployed.bagFactory));
         vm.serializeAddress(json, "withdrawalRequest", address(deployed.withdrawalRequest));
@@ -83,6 +86,9 @@ contract DeployStakedRail is Script {
     }
 
     function _deploy(Config memory config) private returns (Deployed memory deployed) {
+        deployed.manager =
+            new RailStakePositionManager(config.admin, IERC20(config.rail), IRailgunStaking(config.staking));
+
         QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
         deployed.qRail = QueuedRailStrategy(
             payable(
@@ -90,14 +96,12 @@ contract DeployStakedRail is Script {
                     new TransparentUpgradeableProxy(
                         address(qRailImplementation),
                         config.admin,
-                        abi.encodeCall(QueuedRailStrategy.initialize, (config.admin, config.rail))
+                        abi.encodeCall(QueuedRailStrategy.initialize, (config.admin, config.rail, deployed.manager))
                     )
                 )
             )
         );
-
-        deployed.manager =
-            new RailStakePositionManager(config.admin, IERC20(config.rail), IRailgunStaking(config.staking));
+        deployed.qRailSharesHook = new QueuedRailSharesHook(deployed.qRail);
 
         StakedRailStrategy strategyImplementation = new StakedRailStrategy();
         deployed.strategy = StakedRailStrategy(
@@ -175,7 +179,13 @@ contract DeployStakedRail is Script {
 
         deployed.resolver =
             new RailWithdrawalResolver(
-                config.admin, deployed.strategy, deployed.qRail, deployed.manager, deployed.withdrawalRequest, deployed.withdrawer
+                config.admin,
+                deployed.strategy,
+                deployed.qRail,
+                deployed.qRailSharesHook,
+                deployed.manager,
+                deployed.withdrawalRequest,
+                deployed.withdrawer
             );
 
         deployed.stakingProcessor = new StakedRailStakingProcessor(
@@ -187,7 +197,8 @@ contract DeployStakedRail is Script {
             config.targetIdleRail,
             config.maxActivePositions
         );
-        deployed.exitProcessor = new StakedRailExitProcessor(deployed.strategy, deployed.qRail, deployed.manager);
+        deployed.exitProcessor =
+            new StakedRailExitProcessor(deployed.strategy, deployed.qRail, deployed.qRailSharesHook, deployed.manager);
     }
 
     function _wire(Config memory config, Deployed memory deployed) private {
@@ -196,9 +207,10 @@ contract DeployStakedRail is Script {
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.stakingProcessor));
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.exitProcessor));
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.resolver));
-        deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.withdrawer));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_MANAGER_ROLE(), config.admin);
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_MANAGER_ROLE(), config.admin);
+        deployed.qRail.grantRole(deployed.qRail.HOOKS_MANAGER_ROLE(), config.admin);
+        deployed.qRail.setHooks(address(deployed.qRailSharesHook));
         _setProcessorRules(config, deployed);
         deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.resolver));
         deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.exitProcessor));
@@ -214,8 +226,7 @@ contract DeployStakedRail is Script {
         deployed.strategy.setProcessorRule(
             address(deployed.manager), RailStakePositionManager.createPosition.selector, rule
         );
-        deployed.qRail.setProcessorRule(address(deployed.qRail), QueuedRailStrategy.processorMintShares.selector, rule);
-        deployed.qRail.setProcessorRule(address(deployed.qRail), QueuedRailStrategy.processorBurnShares.selector, rule);
+        deployed.qRail.setProcessorRule(address(deployed.qRailSharesHook), QueuedRailSharesHook.mintQueuedRail.selector, rule);
     }
 
     function _emptyRule() private pure returns (IVault.FunctionRule memory rule) {

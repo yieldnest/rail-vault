@@ -5,16 +5,24 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {StakedRailStrategy} from "../StakedRailStrategy.sol";
 import {QueuedRailStrategy} from "../QueuedRailStrategy.sol";
+import {QueuedRailSharesHook} from "./QueuedRailSharesHook.sol";
 import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
 
 contract StakedRailExitProcessor {
     StakedRailStrategy public immutable stRail;
     QueuedRailStrategy public immutable qRail;
+    QueuedRailSharesHook public immutable qRailSharesHook;
     RailStakePositionManager public immutable positionManager;
 
-    constructor(StakedRailStrategy stRail_, QueuedRailStrategy qRail_, RailStakePositionManager positionManager_) {
+    constructor(
+        StakedRailStrategy stRail_,
+        QueuedRailStrategy qRail_,
+        QueuedRailSharesHook qRailSharesHook_,
+        RailStakePositionManager positionManager_
+    ) {
         stRail = stRail_;
         qRail = qRail_;
+        qRailSharesHook = qRailSharesHook_;
         positionManager = positionManager_;
     }
 
@@ -50,8 +58,8 @@ contract StakedRailExitProcessor {
         address[] memory targets = new address[](1);
         uint256[] memory values = new uint256[](1);
         bytes[] memory data = new bytes[](1);
-        targets[0] = address(qRail);
-        data[0] = abi.encodeCall(QueuedRailStrategy.processorMintShares, (address(stRail), amount));
+        targets[0] = address(qRailSharesHook);
+        data[0] = abi.encodeCall(QueuedRailSharesHook.mintQueuedRail, (address(stRail), amount));
         qRail.processor(targets, values, data);
     }
 

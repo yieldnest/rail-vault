@@ -7,6 +7,7 @@ import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.
 
 import {QueuedRailStrategy} from "../QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../StakedRailStrategy.sol";
+import {QueuedRailSharesHook} from "../processors/QueuedRailSharesHook.sol";
 import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
 import {RailWithdrawer} from "./RailWithdrawer.sol";
 
@@ -15,6 +16,7 @@ contract RailWithdrawalResolver is AccessControl {
 
     StakedRailStrategy public immutable stRail;
     QueuedRailStrategy public immutable qRail;
+    QueuedRailSharesHook public immutable qRailSharesHook;
     RailStakePositionManager public immutable positionManager;
     WithdrawalRequest public immutable withdrawalRequest;
     RailWithdrawer public immutable withdrawer;
@@ -27,12 +29,14 @@ contract RailWithdrawalResolver is AccessControl {
         address admin,
         StakedRailStrategy stRail_,
         QueuedRailStrategy qRail_,
+        QueuedRailSharesHook qRailSharesHook_,
         RailStakePositionManager positionManager_,
         WithdrawalRequest withdrawalRequest_,
         RailWithdrawer withdrawer_
     ) {
         stRail = stRail_;
         qRail = qRail_;
+        qRailSharesHook = qRailSharesHook_;
         positionManager = positionManager_;
         withdrawalRequest = withdrawalRequest_;
         withdrawer = withdrawer_;
@@ -40,7 +44,7 @@ contract RailWithdrawalResolver is AccessControl {
     }
 
     function claimMaturedPositions(uint256[] calldata stakeIds) external onlyRole(KEEPER_ROLE) returns (uint256) {
-        return positionManager.claimMaturedPositions(stakeIds, address(withdrawer));
+        return positionManager.claimMaturedPositions(stakeIds, address(qRail));
     }
 
     function resolveRequests(uint256 maxRequests) external onlyRole(KEEPER_ROLE) returns (uint256 resolved) {
@@ -57,7 +61,7 @@ contract RailWithdrawalResolver is AccessControl {
                 nextRequestToResolve++;
                 continue;
             }
-            if (IERC20(withdrawer.rail()).balanceOf(address(withdrawer)) < railAmount) break;
+            if (IERC20(withdrawer.rail()).balanceOf(address(qRail)) < railAmount) break;
 
             withdrawalRequest.resolveWithdrawalRequest(requestId, address(withdrawer.rail()), railAmount);
             nextRequestToResolve++;
@@ -90,7 +94,7 @@ contract RailWithdrawalResolver is AccessControl {
             demand += request.amountLocked;
         }
 
-        uint256 available = IERC20(withdrawer.rail()).balanceOf(address(withdrawer)) + positionManager.queuedPrincipal();
+        uint256 available = IERC20(withdrawer.rail()).balanceOf(address(qRail)) + positionManager.queuedPrincipal();
         if (demand > available) {
             deficit = demand - available;
         }
@@ -100,8 +104,8 @@ contract RailWithdrawalResolver is AccessControl {
         address[] memory targets = new address[](1);
         uint256[] memory values = new uint256[](1);
         bytes[] memory data = new bytes[](1);
-        targets[0] = address(qRail);
-        data[0] = abi.encodeCall(QueuedRailStrategy.processorMintShares, (address(stRail), amount));
+        targets[0] = address(qRailSharesHook);
+        data[0] = abi.encodeCall(QueuedRailSharesHook.mintQueuedRail, (address(stRail), amount));
         qRail.processor(targets, values, data);
     }
 }

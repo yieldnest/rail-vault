@@ -14,6 +14,7 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 
 import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
+import {QueuedRailSharesHook} from "../../src/processors/QueuedRailSharesHook.sol";
 import {StakedRailExitProcessor} from "../../src/processors/StakedRailExitProcessor.sol";
 import {StakedRailStakingProcessor} from "../../src/processors/StakedRailStakingProcessor.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
@@ -28,6 +29,7 @@ contract StakedRailStrategyTest is Test {
     MockERC20 rail;
     MockRailgunStaking staking;
     QueuedRailStrategy qRail;
+    QueuedRailSharesHook qRailSharesHook;
     RailStakePositionManager manager;
     StakedRailStrategy strategy;
     BeaconProxyFactory bagFactory;
@@ -41,6 +43,8 @@ contract StakedRailStrategyTest is Test {
         rail = new MockERC20("RAIL", "RAIL", 18);
         staking = new MockRailgunStaking(rail);
 
+        manager = new RailStakePositionManager(address(this), rail, staking);
+
         QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
         qRail = QueuedRailStrategy(
             payable(
@@ -48,13 +52,12 @@ contract StakedRailStrategyTest is Test {
                     new TransparentUpgradeableProxy(
                         address(qRailImplementation),
                         makeAddr("qRailProxyAdmin"),
-                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail)))
+                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail), manager))
                     )
                 )
             )
         );
-
-        manager = new RailStakePositionManager(address(this), rail, staking);
+        qRailSharesHook = new QueuedRailSharesHook(qRail);
 
         StakedRailStrategy implementation = new StakedRailStrategy();
         strategy = StakedRailStrategy(
@@ -126,19 +129,21 @@ contract StakedRailStrategyTest is Test {
             )
         );
 
-        resolver = new RailWithdrawalResolver(address(this), strategy, qRail, manager, requests, withdrawer);
+        resolver =
+            new RailWithdrawalResolver(address(this), strategy, qRail, qRailSharesHook, manager, requests, withdrawer);
         stakingProcessor =
             new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether, 1000 ether, 1000 ether, 100);
-        exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
+        exitProcessor = new StakedRailExitProcessor(strategy, qRail, qRailSharesHook, manager);
 
         manager.setStrategy(address(strategy));
         manager.setExitSystem(address(withdrawer));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(exitProcessor));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
-        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(withdrawer));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
+        qRail.grantRole(qRail.HOOKS_MANAGER_ROLE(), address(this));
+        qRail.setHooks(address(qRailSharesHook));
         _setProcessorRules();
         manager.grantRole(manager.KEEPER_ROLE(), address(resolver));
         manager.grantRole(manager.KEEPER_ROLE(), address(exitProcessor));
@@ -186,7 +191,7 @@ contract StakedRailStrategyTest is Test {
         uint256[] memory stakeIds = manager.queuedStakeIdsList();
         vm.warp(block.timestamp + 30 days + 1);
         resolver.claimMaturedPositions(stakeIds);
-        assertEq(rail.balanceOf(address(withdrawer)), 2000 ether);
+        assertEq(rail.balanceOf(address(qRail)), 2000 ether);
 
         resolver.resolveRequests(1);
         WithdrawalRequest.Request memory request = requests.requests(requestId);
@@ -217,8 +222,7 @@ contract StakedRailStrategyTest is Test {
         IVault.FunctionRule memory rule = _emptyRule();
         strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
-        qRail.setProcessorRule(address(qRail), QueuedRailStrategy.processorMintShares.selector, rule);
-        qRail.setProcessorRule(address(qRail), QueuedRailStrategy.processorBurnShares.selector, rule);
+        qRail.setProcessorRule(address(qRailSharesHook), QueuedRailSharesHook.mintQueuedRail.selector, rule);
     }
 
     function _emptyRule() internal pure returns (IVault.FunctionRule memory rule) {
