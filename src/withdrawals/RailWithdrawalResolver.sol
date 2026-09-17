@@ -7,7 +7,6 @@ import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.
 
 import {QueuedRailStrategy} from "../QueuedRailStrategy.sol";
 import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
-import {RailWithdrawer} from "./RailWithdrawer.sol";
 
 contract RailWithdrawalResolver is AccessControl {
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
@@ -15,7 +14,6 @@ contract RailWithdrawalResolver is AccessControl {
     QueuedRailStrategy public immutable qRail;
     RailStakePositionManager public immutable positionManager;
     WithdrawalRequest public immutable withdrawalRequest;
-    RailWithdrawer public immutable withdrawer;
 
     uint256 public nextRequestToResolve;
 
@@ -25,13 +23,11 @@ contract RailWithdrawalResolver is AccessControl {
         address admin,
         QueuedRailStrategy qRailAddress,
         RailStakePositionManager positionManagerAddress,
-        WithdrawalRequest withdrawalRequestAddress,
-        RailWithdrawer withdrawerAddress
+        WithdrawalRequest withdrawalRequestAddress
     ) {
         qRail = qRailAddress;
         positionManager = positionManagerAddress;
         withdrawalRequest = withdrawalRequestAddress;
-        withdrawer = withdrawerAddress;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
@@ -40,6 +36,7 @@ contract RailWithdrawalResolver is AccessControl {
     }
 
     function resolveRequests(uint256 maxRequests) external onlyRole(KEEPER_ROLE) returns (uint256 resolved) {
+        address rail = qRail.asset();
         while (resolved < maxRequests && nextRequestToResolve < withdrawalRequest.nextRequestId()) {
             uint256 requestId = nextRequestToResolve;
             if (!withdrawalRequest.requestExists(requestId)) {
@@ -53,9 +50,9 @@ contract RailWithdrawalResolver is AccessControl {
                 nextRequestToResolve++;
                 continue;
             }
-            if (IERC20(withdrawer.rail()).balanceOf(address(qRail)) < railAmount) break;
+            if (IERC20(rail).balanceOf(address(qRail)) < railAmount) break;
 
-            withdrawalRequest.resolveWithdrawalRequest(requestId, address(withdrawer.rail()), railAmount);
+            withdrawalRequest.resolveWithdrawalRequest(requestId, rail, railAmount);
             nextRequestToResolve++;
             resolved++;
             emit RequestResolved(requestId, railAmount);

@@ -18,7 +18,7 @@ import {StakedRailExitProcessor} from "../../src/processors/StakedRailExitProces
 import {StakedRailStakingProcessor} from "../../src/processors/StakedRailStakingProcessor.sol";
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
-import {RailWithdrawer} from "../../src/withdrawals/RailWithdrawer.sol";
+import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
 import {RailWithdrawalResolver} from "../../src/withdrawals/RailWithdrawalResolver.sol";
 
 contract StakedRailWithdrawalIntegrationTest is Test {
@@ -35,7 +35,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     StakedRailStrategy internal strategy;
     BeaconProxyFactory internal bagFactory;
     WithdrawalRequest internal requests;
-    RailWithdrawer internal withdrawer;
+    BaseWithdrawer internal withdrawer;
     RailWithdrawalResolver internal resolver;
     StakedRailStakingProcessor internal stakingProcessor;
     StakedRailExitProcessor internal exitProcessor;
@@ -129,21 +129,21 @@ contract StakedRailWithdrawalIntegrationTest is Test {
             )
         );
 
-        RailWithdrawer withdrawerImplementation = new RailWithdrawer();
-        withdrawer = RailWithdrawer(
+        BaseWithdrawer withdrawerImplementation = new BaseWithdrawer();
+        withdrawer = BaseWithdrawer(
             payable(
                 address(
                     new TransparentUpgradeableProxy(
                         address(withdrawerImplementation),
                         makeAddr("withdrawerProxyAdmin"),
-                        abi.encodeCall(RailWithdrawer.initialize, (address(qRail), address(requests), address(rail)))
+                        abi.encodeCall(BaseWithdrawer.initialize, (address(qRail), address(requests)))
                     )
                 )
             )
         );
 
         resolver =
-            new RailWithdrawalResolver(address(this), qRail, manager, requests, withdrawer);
+            new RailWithdrawalResolver(address(this), qRail, manager, requests);
         stakingProcessor =
             new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether, 1000 ether, 1000 ether, 100);
         exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);

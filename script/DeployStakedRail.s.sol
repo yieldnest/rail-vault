@@ -19,7 +19,7 @@ import {StakedRailStakingProcessor} from "../src/processors/StakedRailStakingPro
 import {IRailgunGovernorRewards} from "../src/railgun/IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../src/railgun/RailStakePositionManager.sol";
-import {RailWithdrawer} from "../src/withdrawals/RailWithdrawer.sol";
+import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
 import {RailWithdrawalResolver} from "../src/withdrawals/RailWithdrawalResolver.sol";
 
 contract DeployStakedRail is Script {
@@ -42,7 +42,7 @@ contract DeployStakedRail is Script {
         StakedRailStrategy strategy;
         BeaconProxyFactory bagFactory;
         WithdrawalRequest withdrawalRequest;
-        RailWithdrawer withdrawer;
+        BaseWithdrawer withdrawer;
         RailWithdrawalResolver resolver;
         StakedRailStakingProcessor stakingProcessor;
         StakedRailExitProcessor exitProcessor;
@@ -167,16 +167,16 @@ contract DeployStakedRail is Script {
             )
         );
 
-        RailWithdrawer withdrawerImplementation = new RailWithdrawer();
-        deployed.withdrawer = RailWithdrawer(
+        BaseWithdrawer withdrawerImplementation = new BaseWithdrawer();
+        deployed.withdrawer = BaseWithdrawer(
             payable(
                 address(
                     new TransparentUpgradeableProxy(
                         address(withdrawerImplementation),
                         config.admin,
                         abi.encodeCall(
-                            RailWithdrawer.initialize,
-                            (address(deployed.qRail), address(deployed.withdrawalRequest), config.rail)
+                            BaseWithdrawer.initialize,
+                            (address(deployed.qRail), address(deployed.withdrawalRequest))
                         )
                     )
                 )
@@ -188,8 +188,7 @@ contract DeployStakedRail is Script {
                 config.admin,
                 deployed.qRail,
                 deployed.manager,
-                deployed.withdrawalRequest,
-                deployed.withdrawer
+                deployed.withdrawalRequest
             );
 
         deployed.stakingProcessor = new StakedRailStakingProcessor(

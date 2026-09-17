@@ -107,7 +107,6 @@ Do not build a second withdrawal queue.
 StakedRailStrategy
 QueuedRail (qRAIL)
 RailStakePositionManager
-RailWithdrawer
 RailWithdrawalResolver
 StakedRailViewer
 ```
@@ -122,7 +121,6 @@ src/
 │   ├── IRailgunStaking.sol
 │   └── RailStakePositionManager.sol
 ├── withdrawals/
-│   ├── RailWithdrawer.sol
 │   └── RailWithdrawalResolver.sol
 ├── interface/
 └── views/
@@ -349,27 +347,15 @@ Chunks:   20k + 20k + 20k
 The keeper can queue two chunks, producing 40k qRAIL, which services the
 FIFO queue.
 
-## RailWithdrawer
+## Withdrawer
 
-Implement a specialized `IWithdrawer`, inheriting `BaseWithdrawer` where
-practical.
+Use YieldNest's existing `BaseWithdrawer` directly, initialized with qRAIL
+and the `WithdrawalRequest` contract. No RAIL-specific adapter is needed.
 
-Preserve:
-
-``` solidity
-onlyWithdrawalRequest
-```
-
-For final settlement it must:
-
-1.  validate the request's RAIL reservation;
-2.  determine/validate stRAIL shares consumed;
-3.  consume locked stRAIL;
-4.  consume the request reservation;
-5.  transfer RAIL into the request Bag;
-6.  return the exact shares consumed.
-
-Preserve the generic `WithdrawalRequest` balance-delta accounting.
+The resolver obtains RAIL's address from `qRail.asset()`. For settlement,
+`BaseWithdrawer` forwards the authorized withdrawal to qRAIL, consuming
+locked qRAIL shares and transferring RAIL into the request Bag. The generic
+`WithdrawalRequest` balance-delta accounting remains unchanged.
 
 ## Two-Stage Exit
 
@@ -676,7 +662,6 @@ StakedRailStrategy
 QueuedRail
 IRailgunStaking
 RailStakePositionManager
-RailWithdrawer
 RailWithdrawalResolver
 StakedRailViewer
 deployment scripts
@@ -697,7 +682,7 @@ stRAIL -> Request NFT -> Bag -> RAIL
 ```
 
 `qRAIL` bridges YieldNest strategy accounting and RAILGUN's asynchronous
-positional exit lifecycle. `RailWithdrawer` and `RailWithdrawalResolver`
+positional exit lifecycle. YieldNest's `BaseWithdrawer` and `RailWithdrawalResolver`
 bridge that internal liquidity state into the existing YieldNest
 withdrawal-request system.
 
