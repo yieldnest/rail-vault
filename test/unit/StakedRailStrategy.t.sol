@@ -64,7 +64,7 @@ contract StakedRailStrategyTest is Test {
                         address(implementation),
                         makeAddr("stRailProxyAdmin"),
                         abi.encodeCall(
-                            StakedRailStrategy.initialize, (address(this), address(rail), manager)
+                            StakedRailStrategy.initialize, (address(this), address(rail), manager, qRail)
                         )
                     )
                 )
@@ -126,21 +126,22 @@ contract StakedRailStrategyTest is Test {
             )
         );
 
-        resolver = new RailWithdrawalResolver(address(this), strategy, manager, requests, withdrawer);
+        resolver = new RailWithdrawalResolver(address(this), strategy, qRail, manager, requests, withdrawer);
         stakingProcessor =
             new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether, 1000 ether, 1000 ether, 100);
-        exitProcessor = new StakedRailExitProcessor(strategy, qRail);
+        exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
 
         manager.setStrategy(address(strategy));
         manager.setExitSystem(address(withdrawer));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
-        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(exitProcessor));
+        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(withdrawer));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
         manager.grantRole(manager.KEEPER_ROLE(), address(resolver));
+        manager.grantRole(manager.KEEPER_ROLE(), address(exitProcessor));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
@@ -168,17 +169,19 @@ contract StakedRailStrategyTest is Test {
         stakingProcessor.rebalanceStaking(10);
 
         vm.startPrank(user);
-        exitProcessor.exitToQueuedRail(1500 ether, user);
+        strategy.approve(address(exitProcessor), 1500 ether);
+        exitProcessor.exitToQueuedRail(1500 ether, user, 2);
         qRail.approve(address(requests), 1500 ether);
         uint256 requestId = requests.requestWithdrawal(1500 ether, user, "");
         vm.stopPrank();
 
         assertEq(qRail.balanceOf(address(requests)), 1500 ether);
+        assertEq(qRail.balanceOf(address(strategy)), 500 ether);
         assertEq(qRail.convertToAssets(1500 ether), 1500 ether);
-
-        resolver.rebalanceExits(2);
         assertEq(manager.activePrincipal(), 2000 ether);
         assertEq(manager.queuedPrincipal(), 2000 ether);
+        assertEq(resolver.unstakingDeficit(), 0);
+        assertEq(resolver.rebalanceExits(2), 0);
 
         uint256[] memory stakeIds = manager.queuedStakeIdsList();
         vm.warp(block.timestamp + 30 days + 1);
@@ -190,6 +193,7 @@ contract StakedRailStrategyTest is Test {
         assertEq(request.amountLocked, 0);
         assertEq(rail.balanceOf(request.bag), 1500 ether);
         assertEq(qRail.balanceOf(address(requests)), 0);
+        assertEq(qRail.balanceOf(address(strategy)), 500 ether);
 
         address[] memory assets = new address[](1);
         assets[0] = address(rail);
@@ -213,7 +217,6 @@ contract StakedRailStrategyTest is Test {
         IVault.FunctionRule memory rule = _emptyRule();
         strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
-        strategy.setProcessorRule(address(strategy), StakedRailStrategy.processorBurnShares.selector, rule);
         qRail.setProcessorRule(address(qRail), QueuedRailStrategy.processorMintShares.selector, rule);
         qRail.setProcessorRule(address(qRail), QueuedRailStrategy.processorBurnShares.selector, rule);
     }

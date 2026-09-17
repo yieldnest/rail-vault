@@ -80,7 +80,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
                         address(strategyImplementation),
                         makeAddr("stRailProxyAdmin"),
                         abi.encodeCall(
-                            StakedRailStrategy.initialize, (address(this), address(rail), manager)
+                            StakedRailStrategy.initialize, (address(this), address(rail), manager, qRail)
                         )
                     )
                 )
@@ -142,21 +142,22 @@ contract StakedRailWithdrawalIntegrationTest is Test {
             )
         );
 
-        resolver = new RailWithdrawalResolver(address(this), strategy, manager, requests, withdrawer);
+        resolver = new RailWithdrawalResolver(address(this), strategy, qRail, manager, requests, withdrawer);
         stakingProcessor =
             new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether, 1000 ether, 1000 ether, 100);
-        exitProcessor = new StakedRailExitProcessor(strategy, qRail);
+        exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
 
         manager.setStrategy(address(strategy));
         manager.setExitSystem(address(withdrawer));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
-        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(exitProcessor));
+        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(withdrawer));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
         manager.grantRole(manager.KEEPER_ROLE(), address(resolver));
+        manager.grantRole(manager.KEEPER_ROLE(), address(exitProcessor));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
@@ -179,7 +180,8 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertEq(rail.balanceOf(address(strategy)), 1000 ether);
 
         vm.startPrank(alice);
-        uint256 qRailAmount = exitProcessor.exitToQueuedRail(1500 ether, alice);
+        strategy.approve(address(exitProcessor), 1500 ether);
+        uint256 qRailAmount = exitProcessor.exitToQueuedRail(1500 ether, alice, 2);
         qRail.approve(address(requests), qRailAmount);
         uint256 requestId = requests.requestWithdrawal(qRailAmount, alice, "integration");
         requests.transferFrom(alice, bob, requestId);
@@ -188,10 +190,8 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertEq(qRailAmount, 1500 ether);
         assertEq(strategy.balanceOf(alice), 3500 ether);
         assertEq(qRail.balanceOf(address(requests)), 1500 ether);
+        assertEq(qRail.balanceOf(address(strategy)), 500 ether);
         assertEq(requests.ownerOf(requestId), bob);
-        assertEq(resolver.unstakingDeficit(), 1500 ether);
-
-        assertEq(resolver.rebalanceExits(10), 2);
         assertEq(manager.activePrincipal(), 2000 ether);
         assertEq(manager.queuedPrincipal(), 2000 ether);
         assertEq(resolver.unstakingDeficit(), 0);
@@ -208,6 +208,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertEq(rail.balanceOf(request.bag), 1500 ether);
         assertEq(rail.balanceOf(address(withdrawer)), 500 ether);
         assertEq(qRail.balanceOf(address(requests)), 0);
+        assertEq(qRail.balanceOf(address(strategy)), 500 ether);
 
         address[] memory assets = new address[](1);
         assets[0] = address(rail);
@@ -236,7 +237,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         IVault.FunctionRule memory rule = _emptyRule();
         strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
-        strategy.setProcessorRule(address(strategy), StakedRailStrategy.processorBurnShares.selector, rule);
         qRail.setProcessorRule(address(qRail), QueuedRailStrategy.processorMintShares.selector, rule);
         qRail.setProcessorRule(address(qRail), QueuedRailStrategy.processorBurnShares.selector, rule);
     }

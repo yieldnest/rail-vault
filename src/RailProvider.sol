@@ -8,15 +8,17 @@ contract RailProvider is IProvider {
     error UnsupportedAsset(address asset);
 
     address public immutable rail;
+    address public immutable queuedRail;
     uint256 public immutable rate;
 
-    constructor(address rail_) {
+    constructor(address rail_, address queuedRail_) {
         rail = rail_;
+        queuedRail = queuedRail_;
         rate = 10 ** IERC20Metadata(rail_).decimals();
     }
 
     function getRate(address asset) external view returns (uint256) {
-        if (asset != rail) revert UnsupportedAsset(asset);
+        if (asset != rail && asset != queuedRail) revert UnsupportedAsset(asset);
         return rate;
     }
 }

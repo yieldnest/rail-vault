@@ -5,6 +5,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 
+import {QueuedRailStrategy} from "../QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../StakedRailStrategy.sol";
 import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
 import {RailWithdrawer} from "./RailWithdrawer.sol";
@@ -13,6 +14,7 @@ contract RailWithdrawalResolver is AccessControl {
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
 
     StakedRailStrategy public immutable stRail;
+    QueuedRailStrategy public immutable qRail;
     RailStakePositionManager public immutable positionManager;
     WithdrawalRequest public immutable withdrawalRequest;
     RailWithdrawer public immutable withdrawer;
@@ -24,11 +26,13 @@ contract RailWithdrawalResolver is AccessControl {
     constructor(
         address admin,
         StakedRailStrategy stRail_,
+        QueuedRailStrategy qRail_,
         RailStakePositionManager positionManager_,
         WithdrawalRequest withdrawalRequest_,
         RailWithdrawer withdrawer_
     ) {
         stRail = stRail_;
+        qRail = qRail_;
         positionManager = positionManager_;
         withdrawalRequest = withdrawalRequest_;
         withdrawer = withdrawer_;
@@ -69,7 +73,9 @@ contract RailWithdrawalResolver is AccessControl {
         uint256[] memory activeStakeIds = positionManager.activeStakeIdsList();
         uint256 queuedAmount;
         for (uint256 i = 0; i < activeStakeIds.length && queued < maxPositions; i++) {
-            queuedAmount += positionManager.queuePosition(activeStakeIds[i]);
+            uint256 queuedPrincipal = positionManager.queuePosition(activeStakeIds[i]);
+            _mintQueuedRailToStrategy(queuedPrincipal);
+            queuedAmount += queuedPrincipal;
             queued++;
             if (queuedAmount >= deficit) break;
         }
@@ -88,5 +94,14 @@ contract RailWithdrawalResolver is AccessControl {
         if (demand > available) {
             deficit = demand - available;
         }
+    }
+
+    function _mintQueuedRailToStrategy(uint256 amount) internal {
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(qRail);
+        data[0] = abi.encodeCall(QueuedRailStrategy.processorMintShares, (address(stRail), amount));
+        qRail.processor(targets, values, data);
     }
 }

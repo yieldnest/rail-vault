@@ -5,6 +5,7 @@ import {IERC20Metadata as IERC20} from "@yieldnest-vault/Common.sol";
 import {BaseStrategy} from "@yieldnest-vault/strategy/BaseStrategy.sol";
 import {VaultLib} from "@yieldnest-vault/library/VaultLib.sol";
 
+import {QueuedRailStrategy} from "./QueuedRailStrategy.sol";
 import {RailProvider} from "./RailProvider.sol";
 import {RailStakePositionManager} from "./railgun/RailStakePositionManager.sol";
 
@@ -12,16 +13,23 @@ contract StakedRailStrategy is BaseStrategy {
     string public constant ST_RAIL_VERSION = "0.1.0";
 
     RailStakePositionManager public positionManager;
+    QueuedRailStrategy public queuedRail;
 
     event PositionManagerSet(address indexed positionManager);
 
-    function initialize(address admin, address rail, RailStakePositionManager positionManager_) external initializer {
+    function initialize(address admin, address rail, RailStakePositionManager positionManager_, QueuedRailStrategy queuedRail_)
+        external
+        initializer
+    {
         _initialize(admin, "Staked RAIL", "stRAIL", IERC20(rail).decimals(), true, false, true, 0);
         _addAsset(rail, IERC20(rail).decimals(), true);
+        _addAsset(address(queuedRail_), IERC20(rail).decimals(), true);
         _setAssetWithdrawable(rail, false);
-        VaultLib.setProvider(address(new RailProvider(rail)));
+        _setAssetWithdrawable(address(queuedRail_), true);
+        VaultLib.setProvider(address(new RailProvider(rail, address(queuedRail_))));
 
         positionManager = positionManager_;
+        queuedRail = queuedRail_;
         emit PositionManagerSet(address(positionManager_));
     }
 
@@ -39,16 +47,9 @@ contract StakedRailStrategy is BaseStrategy {
 
     function computeTotalAssets() public view override returns (uint256 totalBaseBalance) {
         totalBaseBalance = IERC20(asset()).balanceOf(address(this));
+        totalBaseBalance += IERC20(address(queuedRail)).balanceOf(address(this));
         if (address(positionManager) != address(0)) {
             totalBaseBalance += positionManager.activePrincipal();
-            totalBaseBalance += positionManager.queuedPrincipal();
         }
     }
-
-    function processorBurnShares(address owner, uint256 shares) external {
-        if (msg.sender != address(this)) revert OnlyProcessorSelfCall();
-        _burn(owner, shares);
-    }
-
-    error OnlyProcessorSelfCall();
 }
