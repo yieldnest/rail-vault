@@ -11,13 +11,13 @@ import {RailStakePositionManager} from "./railgun/RailStakePositionManager.sol";
 contract QueuedRailStrategy is BaseStrategy {
     RailStakePositionManager public positionManager;
 
-    function initialize(address admin, address rail, RailStakePositionManager positionManager_) external initializer {
+    function initialize(address admin, address rail, RailStakePositionManager positionManagerAddress) external initializer {
         _initialize(admin, "Queued RAIL", "qRAIL", IERC20(rail).decimals(), false, false, true, 0);
         _addAsset(rail, IERC20(rail).decimals(), false);
         _setAssetWithdrawable(rail, true);
         VaultLib.setProvider(address(new RailProvider(rail, address(0))));
 
-        positionManager = positionManager_;
+        positionManager = positionManagerAddress;
     }
 
     function computeTotalAssets() public view override returns (uint256 totalBaseBalance) {

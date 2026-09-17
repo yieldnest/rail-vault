@@ -8,18 +8,18 @@ contract QueuedRailSharesHook is IHooks {
     IVault public immutable override VAULT;
     Config private config;
 
-    constructor(IVault vault_) {
-        VAULT = vault_;
+    constructor(IVault vaultAddress) {
+        VAULT = vaultAddress;
     }
 
     function name() external pure returns (string memory) {
         return "QueuedRailSharesHook";
     }
 
-    function setConfig(Config memory config_) external {
+    function setConfig(Config memory newConfig) external {
         Config memory oldConfig = config;
-        config = config_;
-        emit SetConfig(oldConfig, config_);
+        config = newConfig;
+        emit SetConfig(oldConfig, newConfig);
     }
 
     function getConfig() external view returns (Config memory) {

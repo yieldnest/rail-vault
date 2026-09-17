@@ -44,9 +44,9 @@ contract RailStakePositionManager is AccessControl, Pausable {
     event PositionQueued(uint256 indexed stakeId, uint256 principal, uint256 locktime);
     event PositionClaimed(uint256 indexed stakeId, uint256 principal, address indexed receiver);
 
-    constructor(address admin, IERC20 rail_, IRailgunStaking staking_) {
-        rail = rail_;
-        staking = staking_;
+    constructor(address admin, IERC20 railToken, IRailgunStaking stakingContract) {
+        rail = railToken;
+        staking = stakingContract;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
@@ -55,16 +55,16 @@ contract RailStakePositionManager is AccessControl, Pausable {
         _;
     }
 
-    function setExitSystem(address exitSystem_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (exitSystem_ == address(0)) revert ZeroAddress();
-        exitSystem = exitSystem_;
-        emit ExitSystemSet(exitSystem_);
+    function setExitSystem(address exitSystemAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (exitSystemAddress == address(0)) revert ZeroAddress();
+        exitSystem = exitSystemAddress;
+        emit ExitSystemSet(exitSystemAddress);
     }
 
-    function setStrategy(address strategy_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (strategy_ == address(0)) revert ZeroAddress();
+    function setStrategy(address strategyAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (strategyAddress == address(0)) revert ZeroAddress();
         if (strategy != address(0)) revert StrategyAlreadySet();
-        strategy = strategy_;
+        strategy = strategyAddress;
     }
 
     function createPosition(uint256 amount) external onlyStrategy whenNotPaused returns (uint256 stakeId) {

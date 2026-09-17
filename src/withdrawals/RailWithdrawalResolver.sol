@@ -27,19 +27,19 @@ contract RailWithdrawalResolver is AccessControl {
 
     constructor(
         address admin,
-        StakedRailStrategy stRail_,
-        QueuedRailStrategy qRail_,
-        QueuedRailSharesHook qRailSharesHook_,
-        RailStakePositionManager positionManager_,
-        WithdrawalRequest withdrawalRequest_,
-        RailWithdrawer withdrawer_
+        StakedRailStrategy stRailAddress,
+        QueuedRailStrategy qRailAddress,
+        QueuedRailSharesHook qRailSharesHookAddress,
+        RailStakePositionManager positionManagerAddress,
+        WithdrawalRequest withdrawalRequestAddress,
+        RailWithdrawer withdrawerAddress
     ) {
-        stRail = stRail_;
-        qRail = qRail_;
-        qRailSharesHook = qRailSharesHook_;
-        positionManager = positionManager_;
-        withdrawalRequest = withdrawalRequest_;
-        withdrawer = withdrawer_;
+        stRail = stRailAddress;
+        qRail = qRailAddress;
+        qRailSharesHook = qRailSharesHookAddress;
+        positionManager = positionManagerAddress;
+        withdrawalRequest = withdrawalRequestAddress;
+        withdrawer = withdrawerAddress;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 

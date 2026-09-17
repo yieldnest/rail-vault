@@ -24,18 +24,18 @@ contract StakedRailStakingProcessor is AccessControl {
 
     constructor(
         address admin,
-        StakedRailStrategy stRail_,
-        RailStakePositionManager positionManager_,
-        uint256 stakeChunkSize_,
-        uint256 minimumStakeAmount_,
-        uint256 targetIdleRail_,
-        uint256 maxActivePositions_
+        StakedRailStrategy stRailAddress,
+        RailStakePositionManager positionManagerAddress,
+        uint256 stakeChunkSizeValue,
+        uint256 minimumStakeAmountValue,
+        uint256 targetIdleRailValue,
+        uint256 maxActivePositionsValue
     ) {
-        stRail = stRail_;
-        positionManager = positionManager_;
+        stRail = stRailAddress;
+        positionManager = positionManagerAddress;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(CONFIG_MANAGER_ROLE, admin);
-        _setStakingConfig(stakeChunkSize_, minimumStakeAmount_, targetIdleRail_, maxActivePositions_);
+        _setStakingConfig(stakeChunkSizeValue, minimumStakeAmountValue, targetIdleRailValue, maxActivePositionsValue);
     }
 
     function rebalanceStaking(uint256 maxOperations) external returns (uint256 operations) {
@@ -64,28 +64,30 @@ contract StakedRailStakingProcessor is AccessControl {
     }
 
     function setStakingConfig(
-        uint256 stakeChunkSize_,
-        uint256 minimumStakeAmount_,
-        uint256 targetIdleRail_,
-        uint256 maxActivePositions_
+        uint256 stakeChunkSizeValue,
+        uint256 minimumStakeAmountValue,
+        uint256 targetIdleRailValue,
+        uint256 maxActivePositionsValue
     ) external onlyRole(CONFIG_MANAGER_ROLE) {
-        _setStakingConfig(stakeChunkSize_, minimumStakeAmount_, targetIdleRail_, maxActivePositions_);
+        _setStakingConfig(stakeChunkSizeValue, minimumStakeAmountValue, targetIdleRailValue, maxActivePositionsValue);
     }
 
     function _setStakingConfig(
-        uint256 stakeChunkSize_,
-        uint256 minimumStakeAmount_,
-        uint256 targetIdleRail_,
-        uint256 maxActivePositions_
+        uint256 stakeChunkSizeValue,
+        uint256 minimumStakeAmountValue,
+        uint256 targetIdleRailValue,
+        uint256 maxActivePositionsValue
     ) internal {
-        if (stakeChunkSize_ == 0 || minimumStakeAmount_ == 0 || minimumStakeAmount_ > stakeChunkSize_) {
+        if (
+            stakeChunkSizeValue == 0 || minimumStakeAmountValue == 0 || minimumStakeAmountValue > stakeChunkSizeValue
+        ) {
             revert InvalidStakingConfig();
         }
-        stakeChunkSize = stakeChunkSize_;
-        minimumStakeAmount = minimumStakeAmount_;
-        targetIdleRail = targetIdleRail_;
-        maxActivePositions = maxActivePositions_;
-        emit StakingConfigSet(stakeChunkSize_, minimumStakeAmount_, targetIdleRail_, maxActivePositions_);
+        stakeChunkSize = stakeChunkSizeValue;
+        minimumStakeAmount = minimumStakeAmountValue;
+        targetIdleRail = targetIdleRailValue;
+        maxActivePositions = maxActivePositionsValue;
+        emit StakingConfigSet(stakeChunkSizeValue, minimumStakeAmountValue, targetIdleRailValue, maxActivePositionsValue);
     }
 
     error InvalidStakingConfig();

@@ -17,20 +17,25 @@ contract StakedRailStrategy is BaseStrategy {
 
     event PositionManagerSet(address indexed positionManager);
 
-    function initialize(address admin, address rail, RailStakePositionManager positionManager_, QueuedRailStrategy queuedRail_)
+    function initialize(
+        address admin,
+        address rail,
+        RailStakePositionManager positionManagerAddress,
+        QueuedRailStrategy queuedRailAddress
+    )
         external
         initializer
     {
         _initialize(admin, "Staked RAIL", "stRAIL", IERC20(rail).decimals(), true, false, true, 0);
         _addAsset(rail, IERC20(rail).decimals(), true);
-        _addAsset(address(queuedRail_), IERC20(rail).decimals(), true);
+        _addAsset(address(queuedRailAddress), IERC20(rail).decimals(), true);
         _setAssetWithdrawable(rail, false);
-        _setAssetWithdrawable(address(queuedRail_), true);
-        VaultLib.setProvider(address(new RailProvider(rail, address(queuedRail_))));
+        _setAssetWithdrawable(address(queuedRailAddress), true);
+        VaultLib.setProvider(address(new RailProvider(rail, address(queuedRailAddress))));
 
-        positionManager = positionManager_;
-        queuedRail = queuedRail_;
-        emit PositionManagerSet(address(positionManager_));
+        positionManager = positionManagerAddress;
+        queuedRail = queuedRailAddress;
+        emit PositionManagerSet(address(positionManagerAddress));
     }
 
     function _feeOnRaw(uint256, address) public pure override returns (uint256) {
@@ -41,11 +46,7 @@ contract StakedRailStrategy is BaseStrategy {
         return 0;
     }
 
-    function totalBaseAssets() public view override returns (uint256) {
-        return computeTotalAssets();
-    }
-
-    function computeTotalAssets() public view override returns (uint256 totalBaseBalance) {
+        function computeTotalAssets() public view override returns (uint256 totalBaseBalance) {
         totalBaseBalance = IERC20(asset()).balanceOf(address(this));
         totalBaseBalance += queuedRail.convertToAssets(IERC20(address(queuedRail)).balanceOf(address(this)));
         if (address(positionManager) != address(0)) {

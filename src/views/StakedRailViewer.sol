@@ -17,13 +17,13 @@ contract StakedRailViewer {
     function strategyAssets(StakedRailStrategy strategy)
         external
         view
-        returns (uint256 idleRail, uint256 activePrincipal, uint256 queuedPrincipal, uint256 totalAssets_)
+        returns (uint256 idleRail, uint256 activePrincipal, uint256 queuedPrincipal, uint256 totalAssets)
     {
         RailStakePositionManager manager = strategy.positionManager();
         idleRail = IERC20(strategy.asset()).balanceOf(address(strategy));
         activePrincipal = manager.activePrincipal();
         queuedPrincipal = manager.queuedPrincipal();
-        totalAssets_ = strategy.totalBaseAssets();
+        totalAssets = strategy.totalBaseAssets();
     }
 
     function requestStatus(WithdrawalRequest request, uint256 requestId)
