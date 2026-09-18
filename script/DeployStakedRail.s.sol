@@ -31,9 +31,6 @@ contract DeployStakedRail is Script {
         address[] rewardTokens;
         uint256 nextRewardClaimInterval;
         uint256 stakeChunkSize;
-        uint256 minimumStakeAmount;
-        uint256 targetIdleRail;
-        uint256 maxActivePositions;
     }
 
     struct Deployed {
@@ -57,10 +54,7 @@ contract DeployStakedRail is Script {
             governorRewards: vm.envAddress("GOVERNOR_REWARDS"),
             rewardTokens: vm.envAddress("REWARD_TOKENS", ","),
             nextRewardClaimInterval: vm.envUint("NEXT_REWARD_CLAIM_INTERVAL"),
-            stakeChunkSize: vm.envOr("STAKE_CHUNK_SIZE", uint256(1000 ether)),
-            minimumStakeAmount: vm.envOr("MINIMUM_STAKE_AMOUNT", uint256(1000 ether)),
-            targetIdleRail: vm.envOr("TARGET_IDLE_RAIL", uint256(1000 ether)),
-            maxActivePositions: vm.envOr("MAX_ACTIVE_POSITIONS", uint256(1000))
+            stakeChunkSize: vm.envOr("STAKE_CHUNK_SIZE", uint256(1000 ether))
         });
         if (config.admin != msg.sender) revert AdminMustBeBroadcasterForInitialSetup();
 
@@ -195,10 +189,7 @@ contract DeployStakedRail is Script {
             config.admin,
             deployed.strategy,
             deployed.manager,
-            config.stakeChunkSize,
-            config.minimumStakeAmount,
-            config.targetIdleRail,
-            config.maxActivePositions
+            config.stakeChunkSize
         );
         deployed.exitProcessor =
             new StakedRailExitProcessor(deployed.strategy, deployed.qRail, deployed.manager);

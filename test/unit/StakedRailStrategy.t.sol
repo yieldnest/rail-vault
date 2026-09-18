@@ -129,7 +129,7 @@ contract StakedRailStrategyTest is Test {
         resolver =
             new RailWithdrawalResolver(address(this), qRail, manager, requests);
         stakingProcessor =
-            new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether, 1000 ether, 1000 ether, 100);
+            new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether);
         exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
 
         manager.setStrategy(address(strategy));
@@ -180,13 +180,57 @@ contract StakedRailStrategyTest is Test {
 
         uint256 operations = stakingProcessor.rebalanceStaking(10);
 
-        assertEq(operations, 4);
-        assertEq(rail.balanceOf(address(strategy)), 1000 ether);
-        assertEq(manager.activePrincipal(), 4000 ether);
+        assertEq(operations, 5);
+        assertEq(rail.balanceOf(address(strategy)), 0);
+        assertEq(manager.activePrincipal(), 5000 ether);
         assertEq(manager.queuedPrincipal(), 0);
         assertEq(strategy.totalBaseAssets(), 5000 ether);
         assertEq(strategy.maxWithdraw(user), 0);
         assertEq(strategy.maxRedeem(user), 0);
+    }
+
+    function testStakingLeavesRemainderAndHonorsOperationLimit() external {
+        _deposit(user, 2500 ether);
+        vm.prank(user);
+        assertEq(stakingProcessor.rebalanceStaking(1), 1);
+        assertEq(manager.activePrincipal(), 1000 ether);
+        assertEq(rail.balanceOf(address(strategy)), 1500 ether);
+
+        assertEq(stakingProcessor.rebalanceStaking(10), 1);
+        assertEq(stakingProcessor.rebalanceStaking(10), 0);
+        assertEq(manager.activePrincipal(), 2000 ether);
+        assertEq(rail.balanceOf(address(strategy)), 500 ether);
+        uint256[] memory ids = manager.activeStakeIdsList();
+        for (uint256 i = 0; i < ids.length; i++) {
+            (, uint256 principal,,) = manager.positions(ids[i]);
+            assertEq(principal, 1000 ether);
+        }
+    }
+
+    function testChunkSizeChangeAppliesToNewStakes() external {
+        _deposit(user, 5500 ether);
+        assertEq(stakingProcessor.rebalanceStaking(1), 1);
+        stakingProcessor.setStakeChunkSize(2000 ether);
+        assertEq(stakingProcessor.rebalanceStaking(10), 2);
+        uint256[] memory ids = manager.activeStakeIdsList();
+        for (uint256 i = 0; i < ids.length; i++) {
+            (, uint256 principal,,) = manager.positions(ids[i]);
+            assertEq(principal, i == 0 ? 1000 ether : 2000 ether);
+        }
+        assertEq(rail.balanceOf(address(strategy)), 500 ether);
+    }
+
+    function testChunkSizeRequiresConfigRoleAndNonzeroValue() external {
+        bytes32 role = stakingProcessor.CONFIG_MANAGER_ROLE();
+        vm.expectRevert(abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, role));
+        vm.prank(user);
+        stakingProcessor.setStakeChunkSize(2000 ether);
+
+        vm.expectRevert(StakedRailStakingProcessor.InvalidStakeChunkSize.selector);
+        stakingProcessor.setStakeChunkSize(0);
+
+        vm.expectRevert(StakedRailStakingProcessor.InvalidStakeChunkSize.selector);
+        new StakedRailStakingProcessor(address(this), strategy, manager, 0);
     }
 
     function testQueuedRailUsesExistingWithdrawalRequestLifecycle() external {
@@ -203,7 +247,7 @@ contract StakedRailStrategyTest is Test {
         assertEq(qRail.balanceOf(address(requests)), 1500 ether);
         assertEq(qRail.balanceOf(address(strategy)), 500 ether);
         assertEq(qRail.convertToAssets(1500 ether), 1500 ether);
-        assertEq(manager.activePrincipal(), 2000 ether);
+        assertEq(manager.activePrincipal(), 3000 ether);
         assertEq(manager.queuedPrincipal(), 2000 ether);
 
         uint256[] memory stakeIds = manager.queuedStakeIdsList();

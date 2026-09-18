@@ -14,40 +14,26 @@ contract StakedRailStakingProcessor is AccessControl {
     RailStakePositionManager public immutable positionManager;
 
     uint256 public stakeChunkSize;
-    uint256 public minimumStakeAmount;
-    uint256 public targetIdleRail;
-    uint256 public maxActivePositions;
-
-    event StakingConfigSet(
-        uint256 stakeChunkSize, uint256 minimumStakeAmount, uint256 targetIdleRail, uint256 maxActivePositions
-    );
+    event StakeChunkSizeSet(uint256 stakeChunkSize);
 
     constructor(
         address admin,
         StakedRailStrategy stRailAddress,
         RailStakePositionManager positionManagerAddress,
-        uint256 stakeChunkSizeValue,
-        uint256 minimumStakeAmountValue,
-        uint256 targetIdleRailValue,
-        uint256 maxActivePositionsValue
+        uint256 stakeChunkSizeValue
     ) {
         stRail = stRailAddress;
         positionManager = positionManagerAddress;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(CONFIG_MANAGER_ROLE, admin);
-        _setStakingConfig(stakeChunkSizeValue, minimumStakeAmountValue, targetIdleRailValue, maxActivePositionsValue);
+        _setStakeChunkSize(stakeChunkSizeValue);
     }
 
     function rebalanceStaking(uint256 maxOperations) external returns (uint256 operations) {
         IERC20 rail = IERC20(stRail.asset());
+        uint256 amount = stakeChunkSize;
         while (operations < maxOperations) {
-            uint256 idle = rail.balanceOf(address(stRail));
-            if (idle <= targetIdleRail || idle - targetIdleRail < minimumStakeAmount) break;
-            if (positionManager.activePositionCount() >= maxActivePositions) break;
-
-            uint256 amount = idle - targetIdleRail;
-            if (amount > stakeChunkSize) amount = stakeChunkSize;
-            if (amount < minimumStakeAmount) break;
+            if (rail.balanceOf(address(stRail)) < amount) break;
 
             address[] memory targets = new address[](2);
             uint256[] memory values = new uint256[](2);
@@ -63,32 +49,15 @@ contract StakedRailStakingProcessor is AccessControl {
         }
     }
 
-    function setStakingConfig(
-        uint256 stakeChunkSizeValue,
-        uint256 minimumStakeAmountValue,
-        uint256 targetIdleRailValue,
-        uint256 maxActivePositionsValue
-    ) external onlyRole(CONFIG_MANAGER_ROLE) {
-        _setStakingConfig(stakeChunkSizeValue, minimumStakeAmountValue, targetIdleRailValue, maxActivePositionsValue);
+    function setStakeChunkSize(uint256 stakeChunkSizeValue) external onlyRole(CONFIG_MANAGER_ROLE) {
+        _setStakeChunkSize(stakeChunkSizeValue);
     }
 
-    function _setStakingConfig(
-        uint256 stakeChunkSizeValue,
-        uint256 minimumStakeAmountValue,
-        uint256 targetIdleRailValue,
-        uint256 maxActivePositionsValue
-    ) internal {
-        if (
-            stakeChunkSizeValue == 0 || minimumStakeAmountValue == 0 || minimumStakeAmountValue > stakeChunkSizeValue
-        ) {
-            revert InvalidStakingConfig();
-        }
+    function _setStakeChunkSize(uint256 stakeChunkSizeValue) internal {
+        if (stakeChunkSizeValue == 0) revert InvalidStakeChunkSize();
         stakeChunkSize = stakeChunkSizeValue;
-        minimumStakeAmount = minimumStakeAmountValue;
-        targetIdleRail = targetIdleRailValue;
-        maxActivePositions = maxActivePositionsValue;
-        emit StakingConfigSet(stakeChunkSizeValue, minimumStakeAmountValue, targetIdleRailValue, maxActivePositionsValue);
+        emit StakeChunkSizeSet(stakeChunkSizeValue);
     }
 
-    error InvalidStakingConfig();
+    error InvalidStakeChunkSize();
 }

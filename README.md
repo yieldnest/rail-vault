@@ -34,9 +34,6 @@ RAIL=0x... RAIL_STAKING=0x... forge script script/DeployStakedRail.s.sol --rpc-u
 Optional deployment environment variables:
 
 - `STAKE_CHUNK_SIZE`, default `1000 ether`
-- `MINIMUM_STAKE_AMOUNT`, default `1000 ether`
-- `TARGET_IDLE_RAIL`, default `1000 ether`
-- `MAX_ACTIVE_POSITIONS`, default `1000`
 - `UNPAUSE`, default `false`
 
 `ADMIN` must be the broadcasting account for initial setup because YieldNest initializes only `DEFAULT_ADMIN_ROLE`.

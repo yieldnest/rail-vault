@@ -145,7 +145,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         resolver =
             new RailWithdrawalResolver(address(this), qRail, manager, requests);
         stakingProcessor =
-            new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether, 1000 ether, 1000 ether, 100);
+            new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether);
         exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
 
         manager.setStrategy(address(strategy));
@@ -174,9 +174,9 @@ contract StakedRailWithdrawalIntegrationTest is Test {
 
         _deposit(alice, 5000 ether);
 
-        assertEq(stakingProcessor.rebalanceStaking(10), 4);
-        assertEq(manager.activePrincipal(), 4000 ether);
-        assertEq(rail.balanceOf(address(strategy)), 1000 ether);
+        assertEq(stakingProcessor.rebalanceStaking(10), 5);
+        assertEq(manager.activePrincipal(), 5000 ether);
+        assertEq(rail.balanceOf(address(strategy)), 0);
 
         vm.startPrank(alice);
         strategy.approve(address(exitProcessor), 1500 ether);
@@ -191,7 +191,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertEq(qRail.balanceOf(address(requests)), 1500 ether);
         assertEq(qRail.balanceOf(address(strategy)), 500 ether);
         assertEq(requests.ownerOf(requestId), bob);
-        assertEq(manager.activePrincipal(), 2000 ether);
+        assertEq(manager.activePrincipal(), 3000 ether);
         assertEq(manager.queuedPrincipal(), 2000 ether);
 
         uint256[] memory stakeIds = manager.queuedStakeIdsList();

@@ -202,12 +202,11 @@ Configuration should include:
 
 ``` solidity
 uint256 public stakeChunkSize;
-uint256 public minimumStakeAmount;
-uint256 public targetIdleRail;
-uint256 public maxActivePositions;
 ```
 
-A keeper stakes RAIL above the desired idle buffer in bounded chunks.
+Anyone can trigger staking in full chunks, bounded by `maxOperations`.
+Only `CONFIG_MANAGER_ROLE` can change the nonzero chunk size, initially
+1000 RAIL. Any remainder smaller than a chunk stays in the vault.
 Every resulting RAILGUN `stakeID` is recorded.
 
 Withdrawal requests do not map 1:1 to stake chunks. Multiple requests
@@ -479,7 +478,8 @@ Staking keeper:
 function rebalanceStaking(uint256 maxOperations)
 ```
 
-It preserves the idle buffer and creates stake chunks.
+It creates full stake chunks and leaves only a sub-chunk remainder when
+the operation limit permits staking all available chunks.
 
 The exit processor queues complete stake positions before minting the
 corresponding qRAIL to stRAIL. It then redeems the user's stRAIL shares
