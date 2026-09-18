@@ -552,6 +552,28 @@ WithdrawalRequest:
 The resolver module, rather than a normal keeper EOA, should hold
 settlement authority.
 
+## Governance Control and Upgrades
+
+RAILGUN governance controls these deployments through its mainnet
+Delegator (`0xB6d513f6222Ee92Fff975E901bd792E2513fB53B`):
+
+- Grant Delegator the contracts' admin and configuration roles.
+- Transfer ownership of each vault and withdrawal-system ProxyAdmin to
+  Delegator, and grant it the Bag factory's implementation-manager role.
+- Remove the deployer's privileges after verifying the handoff.
+
+Approved proposals execute through `Voting -> Delegator -> target`.
+Delegator can then grant or revoke roles, change configuration, upgrade
+proxy implementations, and update the Bag implementation. Non-proxied
+modules require replacement and rewiring or migration for code changes.
+
+For immediate emergency pausing, governance can authorize a guardian
+through Delegator for a specific target's `pause()` selector, provided
+Delegator holds the target's pause authority. Unpausing and upgrades
+remain under governance.
+
+The current deployment script does not yet perform this handoff.
+
 ## Emergency Behavior
 
 Use independent pause domains:
