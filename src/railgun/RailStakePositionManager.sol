@@ -12,6 +12,8 @@ import {IRailgunStaking} from "./IRailgunStaking.sol";
 contract RailStakePositionManager is AccessControl, Pausable {
     using SafeERC20 for IERC20;
 
+    string public constant RAIL_STAKE_POSITION_MANAGER_VERSION = "0.1.0";
+
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
     bytes32 public constant QUEUER_ROLE = keccak256("QUEUER_ROLE");
     bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
