@@ -70,7 +70,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         uint256 locktime;
         uint256 claimedTime;
         (amount, locktime, claimedTime) = _readPosition(stakeId);
-        if (claimedTime != 0 || locktime == 0) revert InvalidPositionStatus();
+        if (!isQueuedPosition(locktime, claimedTime)) revert InvalidPositionStatus();
         if (!isClaimablePosition(locktime, claimedTime)) revert PositionNotMatured();
 
         staking.claim(stakeId);
@@ -145,8 +145,12 @@ contract RailStakePositionManager is AccessControl, Pausable {
         return claimedTime == 0 && locktime == 0;
     }
 
+    function isQueuedPosition(uint256 locktime, uint256 claimedTime) public pure returns (bool) {
+        return claimedTime == 0 && locktime != 0;
+    }
+
     function isClaimablePosition(uint256 locktime, uint256 claimedTime) public view returns (bool) {
-        return claimedTime == 0 && locktime != 0 && block.timestamp > locktime;
+        return isQueuedPosition(locktime, claimedTime) && block.timestamp > locktime;
     }
 
     function _removeStakeId(uint256[] storage values, uint256 stakeId) internal {
