@@ -23,7 +23,12 @@ Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 git submodule update --init --recursive
 forge build
 forge test
+FOUNDRY_PROFILE=mainnet forge test
 ```
+
+The default profile runs unit tests. The `mainnet` profile runs integration
+tests against `ETH_MAINNET_RPC_URL` from `.env`. To pin the fork, pass
+`--fork-block-number <block>` to the mainnet test command.
 
 Deploy with:
 

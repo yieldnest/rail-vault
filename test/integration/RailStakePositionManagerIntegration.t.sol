@@ -14,25 +14,11 @@ contract RailStakePositionManagerIntegrationTest is Test {
     address internal keeper = makeAddr("keeper");
     address internal receiver = makeAddr("receiver");
 
-    bool internal forkAvailable;
     IERC20 internal rail;
     IRailgunStaking internal staking;
     RailStakePositionManager internal manager;
 
     function setUp() external {
-        string memory rpcUrl = vm.envOr("ETH_MAINNET_RPC_URL", string(""));
-        if (bytes(rpcUrl).length == 0) {
-            return;
-        }
-
-        uint256 forkBlock = vm.envOr("RAIL_FORK_BLOCK", uint256(0));
-        if (forkBlock == 0) {
-            vm.createSelectFork(rpcUrl);
-        } else {
-            vm.createSelectFork(rpcUrl, forkBlock);
-        }
-        forkAvailable = true;
-
         staking = IRailgunStaking(RAILGUN_STAKING);
         rail = IERC20(staking.stakingToken());
         manager = new RailStakePositionManager(address(this), rail, staking);
@@ -42,8 +28,6 @@ contract RailStakePositionManagerIntegrationTest is Test {
     }
 
     function testCreateQueueAndClaimRealRailgunStake() external {
-        vm.skip(!forkAvailable, "ETH_MAINNET_RPC_URL is not set");
-
         assertEq(address(staking), RAILGUN_STAKING);
         assertEq(staking.stakingToken(), address(rail));
 
@@ -115,8 +99,6 @@ contract RailStakePositionManagerIntegrationTest is Test {
     }
 
     function testUnknownStakeIsRejected() external {
-        vm.skip(!forkAvailable, "ETH_MAINNET_RPC_URL is not set");
-
         vm.expectRevert();
         vm.prank(keeper);
         manager.queuePosition(0);

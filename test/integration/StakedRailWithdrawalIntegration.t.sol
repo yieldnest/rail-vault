@@ -27,7 +27,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
 
-    bool internal forkAvailable;
     IERC20 internal rail;
     IRailgunStaking internal staking;
     QueuedRailStrategy internal qRail;
@@ -41,19 +40,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     StakedRailExitProcessor internal exitProcessor;
 
     function setUp() external {
-        string memory rpcUrl = vm.envOr("ETH_MAINNET_RPC_URL", string(""));
-        if (bytes(rpcUrl).length == 0) {
-            return;
-        }
-
-        uint256 forkBlock = vm.envOr("RAIL_FORK_BLOCK", uint256(0));
-        if (forkBlock == 0) {
-            vm.createSelectFork(rpcUrl);
-        } else {
-            vm.createSelectFork(rpcUrl, forkBlock);
-        }
-        forkAvailable = true;
-
         staking = IRailgunStaking(RAILGUN_STAKING);
         rail = IERC20(staking.stakingToken());
 
@@ -164,8 +150,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     }
 
     function testFullStakedRailToRequestNftToRailClaimFlow() external {
-        vm.skip(!forkAvailable, "ETH_MAINNET_RPC_URL is not set");
-
         assertEq(address(staking), RAILGUN_STAKING);
         assertEq(staking.STAKE_LOCKTIME(), 30 days);
         assertEq(staking.stakingToken(), address(rail));
