@@ -132,7 +132,8 @@ contract StakedRailStrategyTest is Test {
             new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether);
         exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
 
-        manager.setStrategy(address(strategy));
+        manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
+        qRail.setStakedRail(address(strategy));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
@@ -307,6 +308,37 @@ contract StakedRailStrategyTest is Test {
         qRail.processor(targets, values, data);
         assertEq(manager.queuedPrincipal(), 0);
         assertEq(rail.balanceOf(address(qRail)), 1000 ether);
+    }
+
+    function testCreatorRoleCanBeGrantedAndRevoked() external {
+        bytes32 role = manager.CREATOR_ROLE();
+        vm.expectRevert(abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, role));
+        vm.prank(user);
+        manager.createPosition(1000 ether);
+
+        manager.grantRole(role, user);
+        rail.mint(address(manager), 1000 ether);
+        vm.prank(user);
+        manager.createPosition(1000 ether);
+        assertEq(manager.activePrincipal(), 1000 ether);
+
+        manager.revokeRole(role, user);
+        vm.expectRevert(abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, role));
+        vm.prank(user);
+        manager.createPosition(1000 ether);
+    }
+
+    function testQueuedRailMinterCannotBeReplaced() external {
+        assertEq(qRail.stakedRail(), address(strategy));
+        vm.expectRevert(QueuedRailStrategy.StakedRailAlreadySet.selector);
+        qRail.setStakedRail(user);
+        vm.expectRevert(QueuedRailStrategy.InvalidStakedRail.selector);
+        qRail.setStakedRail(address(0));
+        vm.expectRevert(abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)", user, qRail.DEFAULT_ADMIN_ROLE()
+        ));
+        vm.prank(user);
+        qRail.setStakedRail(user);
     }
 
     function testDepositAndChunkedStakingAccounting() external {

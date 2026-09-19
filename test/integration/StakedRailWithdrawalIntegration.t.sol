@@ -134,7 +134,8 @@ contract StakedRailWithdrawalIntegrationTest is Test {
             new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether);
         exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
 
-        manager.setStrategy(address(strategy));
+        manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
+        qRail.setStakedRail(address(strategy));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));

@@ -15,12 +15,12 @@ contract RailStakePositionManager is AccessControl, Pausable {
     string public constant RAIL_STAKE_POSITION_MANAGER_VERSION = "0.1.0";
 
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
+    bytes32 public constant CREATOR_ROLE = keccak256("CREATOR_ROLE");
     bytes32 public constant QUEUER_ROLE = keccak256("QUEUER_ROLE");
     bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
 
     IERC20 public immutable rail;
     IRailgunStaking public immutable staking;
-    address public strategy;
 
     uint256[] private activeStakeIds;
     uint256 public activePrincipal;
@@ -37,18 +37,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
-    modifier onlyStrategy() {
-        if (msg.sender != strategy) revert OnlyStrategy();
-        _;
-    }
-
-    function setStrategy(address strategyAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (strategyAddress == address(0)) revert ZeroAddress();
-        if (strategy != address(0)) revert StrategyAlreadySet();
-        strategy = strategyAddress;
-    }
-
-    function createPosition(uint256 amount) external onlyStrategy whenNotPaused returns (uint256 stakeId) {
+    function createPosition(uint256 amount) external onlyRole(CREATOR_ROLE) whenNotPaused returns (uint256 stakeId) {
         rail.forceApprove(address(staking), amount);
         stakeId = staking.stake(amount);
         activeStakeIds.push(stakeId);
@@ -168,9 +157,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         revert UnknownStakeId();
     }
 
-    error OnlyStrategy();
     error ZeroAddress();
-    error StrategyAlreadySet();
     error UnknownStakeId();
     error InvalidPositionStatus();
     error PositionNotMatured();

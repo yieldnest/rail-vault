@@ -311,8 +311,8 @@ Required ordering within that instruction:
 
 The external unstake must succeed before qRAIL is minted. A position
 cannot mint qRAIL twice. Mint failure reverts the unlock and accounting
-updates. qRAIL accepts minting only from `positionManager.strategy()`,
-the stRAIL address set once during deployment.
+updates. qRAIL accepts minting only from its `stakedRail` address,
+configured once by its admin through `setStakedRail` during deployment.
 
 ## User Withdrawal Requests
 
@@ -529,6 +529,7 @@ Use existing YieldNest strategy roles plus:
 ``` text
 RailStakePositionManager:
   DEFAULT_ADMIN_ROLE
+  CREATOR_ROLE -> StakedRailStrategy (createPosition)
   QUEUER_ROLE -> StakedRailStrategy (queuePosition)
   CLAIMER_ROLE -> QueuedRailStrategy (claimPosition / claimMaturedPositions)
   KEEPER_ROLE -> RailRewardsProcessor (claimRewards only)
@@ -540,7 +541,7 @@ stRAIL:
 qRAIL:
   DEFAULT_ADMIN_ROLE
   PROCESSOR_ROLE -> RailWithdrawalResolver
-  mintQueuedRail -> only positionManager.strategy() (stRAIL)
+  mintQueuedRail -> only stakedRail (set once)
 
 WithdrawalRequest:
   existing roles

@@ -22,7 +22,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
         staking = IRailgunStaking(RAILGUN_STAKING);
         rail = IERC20(staking.stakingToken());
         manager = new RailStakePositionManager(address(this), rail, staking);
-        manager.setStrategy(strategy);
+        manager.grantRole(manager.CREATOR_ROLE(), strategy);
         manager.grantRole(manager.QUEUER_ROLE(), keeper);
         manager.grantRole(manager.CLAIMER_ROLE(), keeper);
     }
