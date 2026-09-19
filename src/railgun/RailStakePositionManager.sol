@@ -13,6 +13,8 @@ contract RailStakePositionManager is AccessControl, Pausable {
     using SafeERC20 for IERC20;
 
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
+    bytes32 public constant QUEUER_ROLE = keccak256("QUEUER_ROLE");
+    bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
 
     IERC20 public immutable rail;
     IRailgunStaking public immutable staking;
@@ -52,7 +54,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         emit PositionCreated(stakeId, amount);
     }
 
-    function queuePosition(uint256 stakeId) external onlyRole(KEEPER_ROLE) whenNotPaused returns (uint256 qRailMinted) {
+    function queuePosition(uint256 stakeId) external onlyRole(QUEUER_ROLE) whenNotPaused returns (uint256 qRailMinted) {
         (uint256 principal, uint256 locktime, uint256 claimedTime) = _readPosition(stakeId);
         if (!isActivePosition(locktime, claimedTime)) revert InvalidPositionStatus();
 
@@ -66,7 +68,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         return principal;
     }
 
-    function claimPosition(uint256 stakeId, address receiver) public onlyRole(KEEPER_ROLE) returns (uint256 amount) {
+    function claimPosition(uint256 stakeId, address receiver) public onlyRole(CLAIMER_ROLE) returns (uint256 amount) {
         uint256 locktime;
         uint256 claimedTime;
         (amount, locktime, claimedTime) = _readPosition(stakeId);
@@ -82,7 +84,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
 
     function claimMaturedPositions(uint256[] calldata stakeIds, address receiver)
         external
-        onlyRole(KEEPER_ROLE)
+        onlyRole(CLAIMER_ROLE)
         returns (uint256 totalClaimed)
     {
         for (uint256 i = 0; i < stakeIds.length; i++) {

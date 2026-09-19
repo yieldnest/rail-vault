@@ -154,8 +154,8 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
-        manager.grantRole(manager.KEEPER_ROLE(), address(resolver));
-        manager.grantRole(manager.KEEPER_ROLE(), address(exitProcessor));
+        manager.grantRole(manager.CLAIMER_ROLE(), address(resolver));
+        manager.grantRole(manager.QUEUER_ROLE(), address(exitProcessor));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));

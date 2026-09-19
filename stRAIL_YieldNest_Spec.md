@@ -291,7 +291,7 @@ Prefer exact equality outside atomic transitions.
 ``` solidity
 function queuePosition(uint256 stakeId)
     external
-    onlyRole(KEEPER_ROLE)
+    onlyRole(QUEUER_ROLE)
     returns (uint256 qRailMinted);
 ```
 
@@ -523,7 +523,9 @@ Use existing YieldNest strategy roles plus:
 ``` text
 RailStakePositionManager:
   DEFAULT_ADMIN_ROLE
-  KEEPER_ROLE
+  QUEUER_ROLE -> StakedRailExitProcessor (queuePosition)
+  CLAIMER_ROLE -> RailWithdrawalResolver (claimPosition / claimMaturedPositions)
+  KEEPER_ROLE -> RailRewardsProcessor (claimRewards only)
   PAUSER_ROLE
 
 qRAIL:

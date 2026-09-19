@@ -37,7 +37,8 @@ contract RailStakePositionManagerIntegrationTest is Test {
         rail = IERC20(staking.stakingToken());
         manager = new RailStakePositionManager(address(this), rail, staking);
         manager.setStrategy(strategy);
-        manager.grantRole(manager.KEEPER_ROLE(), keeper);
+        manager.grantRole(manager.QUEUER_ROLE(), keeper);
+        manager.grantRole(manager.CLAIMER_ROLE(), keeper);
     }
 
     function testCreateQueueAndClaimRealRailgunStake() external {

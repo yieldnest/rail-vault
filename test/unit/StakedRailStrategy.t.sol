@@ -138,8 +138,8 @@ contract StakedRailStrategyTest is Test {
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
-        manager.grantRole(manager.KEEPER_ROLE(), address(resolver));
-        manager.grantRole(manager.KEEPER_ROLE(), address(exitProcessor));
+        manager.grantRole(manager.CLAIMER_ROLE(), address(resolver));
+        manager.grantRole(manager.QUEUER_ROLE(), address(exitProcessor));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
@@ -172,6 +172,51 @@ contract StakedRailStrategyTest is Test {
         vm.prank(user);
         qRail.processor(targets, values, data);
         assertEq(qRail.totalSupply(), 0);
+    }
+
+    function testManagerQueueAndClaimRolesAreSeparate() external {
+        _deposit(user, 1000 ether);
+        stakingProcessor.rebalanceStaking(1);
+
+        vm.expectRevert(abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), manager.QUEUER_ROLE()
+        ));
+        vm.prank(address(resolver));
+        manager.queuePosition(0);
+
+        vm.prank(address(exitProcessor));
+        manager.queuePosition(0);
+        vm.warp(block.timestamp + 30 days + 1);
+
+        vm.expectRevert(abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)", address(exitProcessor), manager.CLAIMER_ROLE()
+        ));
+        vm.prank(address(exitProcessor));
+        manager.claimPosition(0, address(qRail));
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 0;
+        vm.expectRevert(abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)", address(exitProcessor), manager.CLAIMER_ROLE()
+        ));
+        vm.prank(address(exitProcessor));
+        manager.claimMaturedPositions(ids, address(qRail));
+
+        manager.grantRole(manager.KEEPER_ROLE(), user);
+        vm.expectRevert(abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)", user, manager.QUEUER_ROLE()
+        ));
+        vm.prank(user);
+        manager.queuePosition(0);
+
+        vm.expectRevert(abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)", user, manager.CLAIMER_ROLE()
+        ));
+        vm.prank(user);
+        manager.claimPosition(0, user);
+
+        vm.prank(address(resolver));
+        assertEq(manager.claimMaturedPositions(ids, address(qRail)), 1000 ether);
     }
 
     function testDepositAndChunkedStakingAccounting() external {

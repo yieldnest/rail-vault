@@ -209,8 +209,8 @@ contract DeployStakedRail is Script {
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_MANAGER_ROLE(), config.admin);
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_MANAGER_ROLE(), config.admin);
         _setProcessorRules(config, deployed);
-        deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.resolver));
-        deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.exitProcessor));
+        deployed.manager.grantRole(deployed.manager.CLAIMER_ROLE(), address(deployed.resolver));
+        deployed.manager.grantRole(deployed.manager.QUEUER_ROLE(), address(deployed.exitProcessor));
         deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.rewardsProcessor));
         deployed.bagFactory.grantRole(deployed.bagFactory.CREATOR_ROLE(), address(deployed.withdrawalRequest));
         deployed.withdrawalRequest.setWithdrawer(address(deployed.withdrawer));
