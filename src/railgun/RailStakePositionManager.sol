@@ -54,10 +54,10 @@ contract RailStakePositionManager is AccessControl, Pausable {
     }
 
     function queuePosition(uint256 stakeId) external onlyRole(KEEPER_ROLE) whenNotPaused returns (uint256 qRailMinted) {
-        uint256 principal = _requireActivePosition(stakeId);
+        (uint256 principal, uint256 locktime, uint256 claimedTime) = _readPosition(stakeId);
+        if (!isActivePosition(locktime, claimedTime)) revert InvalidPositionStatus();
 
         staking.unlock(stakeId);
-        uint256 locktime;
         (,,, locktime,) = staking.stakes(address(this), stakeId);
 
         _removeStakeId(activeStakeIds, stakeId);
@@ -69,7 +69,11 @@ contract RailStakePositionManager is AccessControl, Pausable {
     }
 
     function claimPosition(uint256 stakeId, address receiver) public onlyRole(KEEPER_ROLE) returns (uint256 amount) {
-        amount = _requireClaimablePosition(stakeId);
+        uint256 locktime;
+        uint256 claimedTime;
+        (amount, locktime, claimedTime) = _readPosition(stakeId);
+        if (claimedTime != 0 || locktime == 0) revert InvalidPositionStatus();
+        if (!isClaimablePosition(locktime, claimedTime)) revert PositionNotMatured();
 
         staking.claim(stakeId);
         _removeStakeId(queuedStakeIds, stakeId);
@@ -148,19 +152,12 @@ contract RailStakePositionManager is AccessControl, Pausable {
         (, principal,, locktime, claimedTime) = staking.stakes(address(this), stakeId);
     }
 
-    function _requireActivePosition(uint256 stakeId) internal view returns (uint256 principal) {
-        uint256 locktime;
-        uint256 claimedTime;
-        (principal, locktime, claimedTime) = _readPosition(stakeId);
-        if (claimedTime != 0 || locktime != 0) revert InvalidPositionStatus();
+    function isActivePosition(uint256 locktime, uint256 claimedTime) public pure returns (bool) {
+        return claimedTime == 0 && locktime == 0;
     }
 
-    function _requireClaimablePosition(uint256 stakeId) internal view returns (uint256 principal) {
-        uint256 locktime;
-        uint256 claimedTime;
-        (principal, locktime, claimedTime) = _readPosition(stakeId);
-        if (claimedTime != 0 || locktime == 0) revert InvalidPositionStatus();
-        if (block.timestamp <= locktime) revert PositionNotMatured();
+    function isClaimablePosition(uint256 locktime, uint256 claimedTime) public view returns (bool) {
+        return claimedTime == 0 && locktime != 0 && block.timestamp > locktime;
     }
 
     function _removeStakeId(uint256[] storage values, uint256 stakeId) internal {
