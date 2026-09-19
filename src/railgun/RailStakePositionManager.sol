@@ -32,7 +32,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
     IERC20 public immutable rail;
     IRailgunStaking public immutable staking;
     address public strategy;
-    address public exitSystem;
 
     mapping(uint256 => Position) public positions;
     uint256[] private activeStakeIds;
@@ -40,7 +39,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
     uint256 public activePrincipal;
     uint256 public queuedPrincipal;
 
-    event ExitSystemSet(address indexed exitSystem);
     event PositionCreated(uint256 indexed stakeId, uint256 principal);
     event PositionQueued(uint256 indexed stakeId, uint256 principal, uint256 locktime);
     event PositionClaimed(uint256 indexed stakeId, uint256 principal, address indexed receiver);
@@ -55,12 +53,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
     modifier onlyStrategy() {
         if (msg.sender != strategy) revert OnlyStrategy();
         _;
-    }
-
-    function setExitSystem(address exitSystemAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (exitSystemAddress == address(0)) revert ZeroAddress();
-        exitSystem = exitSystemAddress;
-        emit ExitSystemSet(exitSystemAddress);
     }
 
     function setStrategy(address strategyAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
