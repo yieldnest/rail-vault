@@ -9,6 +9,8 @@ import {RailProvider} from "./RailProvider.sol";
 import {RailStakePositionManager} from "./railgun/RailStakePositionManager.sol";
 
 contract QueuedRailStrategy is BaseStrategy {
+    string public constant Q_RAIL_VERSION = "0.1.0";
+
     RailStakePositionManager public positionManager;
 
     error OnlyStakedRail();
