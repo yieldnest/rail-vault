@@ -201,7 +201,7 @@ contract StakedRailStrategyTest is Test {
         assertEq(rail.balanceOf(address(strategy)), 500 ether);
         uint256[] memory ids = manager.activeStakeIdsList();
         for (uint256 i = 0; i < ids.length; i++) {
-            uint256 principal = manager.positions(ids[i]);
+            (, uint256 principal,,,) = staking.stakes(address(manager), ids[i]);
             assertEq(principal, 1000 ether);
         }
     }
@@ -213,7 +213,7 @@ contract StakedRailStrategyTest is Test {
         assertEq(stakingProcessor.rebalanceStaking(10), 2);
         uint256[] memory ids = manager.activeStakeIdsList();
         for (uint256 i = 0; i < ids.length; i++) {
-            uint256 principal = manager.positions(ids[i]);
+            (, uint256 principal,,,) = staking.stakes(address(manager), ids[i]);
             assertEq(principal, i == 0 ? 1000 ether : 2000 ether);
         }
         assertEq(rail.balanceOf(address(strategy)), 500 ether);

@@ -18,7 +18,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
     IRailgunStaking public immutable staking;
     address public strategy;
 
-    mapping(uint256 => uint256) public positions;
     uint256[] private activeStakeIds;
     uint256[] private queuedStakeIds;
     uint256 public activePrincipal;
@@ -49,7 +48,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
     function createPosition(uint256 amount) external onlyStrategy whenNotPaused returns (uint256 stakeId) {
         rail.forceApprove(address(staking), amount);
         stakeId = staking.stake(amount);
-        positions[stakeId] = amount;
         activeStakeIds.push(stakeId);
         activePrincipal += amount;
         emit PositionCreated(stakeId, amount);
@@ -147,10 +145,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         view
         returns (uint256 principal, uint256 locktime, uint256 claimedTime)
     {
-        uint256 recordedPrincipal = positions[stakeId];
-        if (recordedPrincipal == 0) revert UnknownStakeId();
         (, principal,, locktime, claimedTime) = staking.stakes(address(this), stakeId);
-        if (principal != recordedPrincipal) revert ExternalPositionMismatch();
     }
 
     function _requireActivePosition(uint256 stakeId) internal view returns (uint256 principal) {
@@ -184,6 +179,5 @@ contract RailStakePositionManager is AccessControl, Pausable {
     error StrategyAlreadySet();
     error UnknownStakeId();
     error InvalidPositionStatus();
-    error ExternalPositionMismatch();
     error PositionNotMatured();
 }

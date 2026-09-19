@@ -218,7 +218,6 @@ chunks.
 Maintain:
 
 ``` solidity
-mapping(uint256 => uint256) public positions; // stake ID -> recorded principal
 uint256 public activePrincipal;
 uint256 public queuedPrincipal;
 ```
@@ -242,10 +241,12 @@ ACTIVE -> UNSTAKING -> CLAIMABLE -> CLAIMED
 
 Use actual deployed RAILGUN state wherever possible rather than
 duplicating timing assumptions.
-Separate active-position and claimable-position checks read the external
-stake and verify its principal against the recorded amount. Claimed stakes
-are rejected first; claims require a nonzero locktime strictly less than
-the current timestamp. Unknown local stake IDs are rejected.
+Separate active-position and claimable-position checks read the principal,
+locktime, and claimedTime directly from RAILGUN. No per-position metadata
+is stored locally; only active/queued stake-ID lists and aggregate principal
+totals are maintained. Claimed stakes are rejected first; claims require
+a nonzero locktime strictly less than the current timestamp. Nonexistent
+stake IDs revert in RAILGUN's stake lookup.
 
 ## qRAIL
 

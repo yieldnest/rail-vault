@@ -119,12 +119,14 @@ contract RailStakePositionManagerIntegrationTest is Test {
     function testUnknownStakeIsRejected() external {
         vm.skip(!forkAvailable, "ETH_MAINNET_RPC_URL is not set");
 
-        vm.expectRevert(RailStakePositionManager.UnknownStakeId.selector);
+        vm.expectRevert();
         vm.prank(keeper);
         manager.queuePosition(0);
 
-        vm.expectRevert(RailStakePositionManager.UnknownStakeId.selector);
+        vm.expectRevert();
         vm.prank(keeper);
         manager.claimPosition(0, receiver);
+        assertEq(manager.activePrincipal(), 0);
+        assertEq(manager.queuedPrincipal(), 0);
     }
 }
