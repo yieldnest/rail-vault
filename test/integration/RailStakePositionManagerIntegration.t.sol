@@ -62,6 +62,10 @@ contract RailStakePositionManagerIntegrationTest is Test {
         assertEq(locktime, 0);
         assertEq(claimedTime, 0);
 
+        vm.expectRevert(RailStakePositionManager.InvalidPositionStatus.selector);
+        vm.prank(keeper);
+        manager.claimPosition(stakeId, receiver);
+
         vm.prank(keeper);
         uint256 queued = manager.queuePosition(stakeId);
 
@@ -74,6 +78,16 @@ contract RailStakePositionManagerIntegrationTest is Test {
         (,,, locktime, claimedTime) = staking.stakes(address(manager), stakeId);
         assertGt(locktime, block.timestamp);
         assertEq(claimedTime, 0);
+
+        vm.expectRevert(RailStakePositionManager.InvalidPositionStatus.selector);
+        vm.prank(keeper);
+        manager.queuePosition(stakeId);
+
+        vm.warp(locktime);
+        vm.expectRevert(RailStakePositionManager.PositionNotMatured.selector);
+        vm.prank(keeper);
+        manager.claimPosition(stakeId, receiver);
+        assertEq(manager.queuedPrincipal(), amount);
 
         vm.warp(locktime + 1);
 
@@ -89,5 +103,28 @@ contract RailStakePositionManagerIntegrationTest is Test {
 
         (,,,, claimedTime) = staking.stakes(address(manager), stakeId);
         assertEq(claimedTime, block.timestamp);
+
+        vm.expectRevert(RailStakePositionManager.InvalidPositionStatus.selector);
+        vm.prank(keeper);
+        manager.claimPosition(stakeId, receiver);
+
+        vm.expectRevert(RailStakePositionManager.InvalidPositionStatus.selector);
+        vm.prank(keeper);
+        manager.queuePosition(stakeId);
+        assertEq(manager.activePrincipal(), 0);
+        assertEq(manager.queuedPrincipal(), 0);
+        assertEq(rail.balanceOf(receiver), amount);
+    }
+
+    function testUnknownStakeIsRejected() external {
+        vm.skip(!forkAvailable, "ETH_MAINNET_RPC_URL is not set");
+
+        vm.expectRevert(RailStakePositionManager.UnknownStakeId.selector);
+        vm.prank(keeper);
+        manager.queuePosition(0);
+
+        vm.expectRevert(RailStakePositionManager.UnknownStakeId.selector);
+        vm.prank(keeper);
+        manager.claimPosition(0, receiver);
     }
 }

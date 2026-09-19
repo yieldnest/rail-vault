@@ -215,27 +215,10 @@ chunks.
 
 ## RailStakePositionManager
 
-Suggested model:
-
-``` solidity
-enum PositionStatus {
-    NONE,
-    ACTIVE,
-    UNSTAKING,
-    CLAIMABLE,
-    CLAIMED
-}
-
-struct Position {
-    uint256 principal;
-    PositionStatus status;
-}
-```
-
 Maintain:
 
 ``` solidity
-mapping(uint256 => Position) public positions;
+mapping(uint256 => uint256) public positions; // stake ID -> recorded principal
 uint256 public activePrincipal;
 uint256 public queuedPrincipal;
 ```
@@ -245,13 +228,13 @@ Responsibilities:
 -   interact with RAILGUN staking;
 -   create/register stakes;
 -   initiate unstaking;
--   track position states;
+-   derive position state from RAILGUN's locktime and claimedTime;
 -   mint qRAIL after successful queueing;
 -   claim matured positions;
 -   burn/reconcile qRAIL;
 -   return RAIL to the exit system.
 
-State machine:
+Derived lifecycle (not stored locally):
 
 ``` text
 ACTIVE -> UNSTAKING -> CLAIMABLE -> CLAIMED
@@ -259,6 +242,10 @@ ACTIVE -> UNSTAKING -> CLAIMABLE -> CLAIMED
 
 Use actual deployed RAILGUN state wherever possible rather than
 duplicating timing assumptions.
+Separate active-position and claimable-position checks read the external
+stake and verify its principal against the recorded amount. Claimed stakes
+are rejected first; claims require a nonzero locktime strictly less than
+the current timestamp. Unknown local stake IDs are rejected.
 
 ## qRAIL
 
