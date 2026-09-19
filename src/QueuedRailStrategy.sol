@@ -11,10 +11,10 @@ import {RailStakePositionManager} from "./railgun/RailStakePositionManager.sol";
 contract QueuedRailStrategy is BaseStrategy {
     RailStakePositionManager public positionManager;
 
-    error OnlyProcessorSelfCall();
+    error OnlyStakedRail();
 
     function mintQueuedRail(address receiver, uint256 shares) external {
-        if (msg.sender != address(this)) revert OnlyProcessorSelfCall();
+        if (msg.sender != positionManager.strategy()) revert OnlyStakedRail();
         _mint(receiver, shares);
     }
 

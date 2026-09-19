@@ -150,12 +150,11 @@ contract StakedRailWithdrawalIntegrationTest is Test {
 
         manager.setStrategy(address(strategy));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
-        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(exitProcessor));
+        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
-        qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
         manager.grantRole(manager.CLAIMER_ROLE(), address(resolver));
-        manager.grantRole(manager.QUEUER_ROLE(), address(exitProcessor));
+        manager.grantRole(manager.QUEUER_ROLE(), address(strategy));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
@@ -235,7 +234,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         IVault.FunctionRule memory rule = _emptyRule();
         strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
-        qRail.setProcessorRule(address(qRail), QueuedRailStrategy.mintQueuedRail.selector, rule);
+        strategy.setProcessorRule(address(strategy), StakedRailStrategy.queuePosition.selector, rule);
     }
 
     function _emptyRule() internal pure returns (IVault.FunctionRule memory rule) {

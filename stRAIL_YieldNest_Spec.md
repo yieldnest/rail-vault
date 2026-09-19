@@ -295,18 +295,24 @@ function queuePosition(uint256 stakeId)
     returns (uint256 qRailMinted);
 ```
 
-Required ordering:
+The manager's `QUEUER_ROLE` belongs to stRAIL. The exit processor invokes
+`StakedRailStrategy.queuePosition(stakeId)` through stRAIL's processor;
+this instruction is restricted to an allowlisted processor self-call.
+
+Required ordering within that instruction:
 
 1.  Verify stake exists and is ACTIVE.
 2.  Determine its principal.
 3.  Successfully initiate external unstaking.
-4.  Mark the position UNSTAKING.
+4.  Remove the stake from the active stake-ID list.
 5.  Decrease `activePrincipal`.
 6.  Increase `queuedPrincipal`.
-7.  Mint qRAIL equal to principal.
+7.  stRAIL calls qRAIL to mint the same principal to itself.
 
 The external unstake must succeed before qRAIL is minted. A position
-cannot mint qRAIL twice.
+cannot mint qRAIL twice. Mint failure reverts the unlock and accounting
+updates. qRAIL accepts minting only from `positionManager.strategy()`,
+the stRAIL address set once during deployment.
 
 ## User Withdrawal Requests
 
@@ -468,8 +474,8 @@ function rebalanceStaking(uint256 maxOperations)
 It creates full stake chunks and leaves only a sub-chunk remainder when
 the operation limit permits staking all available chunks.
 
-The exit processor queues complete stake positions before minting the
-corresponding qRAIL to stRAIL. It then redeems the user's stRAIL shares
+The exit processor invokes stRAIL's atomic queue-and-mint instruction for
+complete stake positions. It then redeems the user's stRAIL shares
 for qRAIL, which the user can submit to the withdrawal queue.
 
 Excess qRAIL from whole-position exits remains in stRAIL for later exits.
@@ -523,15 +529,17 @@ Use existing YieldNest strategy roles plus:
 ``` text
 RailStakePositionManager:
   DEFAULT_ADMIN_ROLE
-  QUEUER_ROLE -> StakedRailExitProcessor (queuePosition)
+  QUEUER_ROLE -> StakedRailStrategy (queuePosition)
   CLAIMER_ROLE -> RailWithdrawalResolver (claimPosition / claimMaturedPositions)
   KEEPER_ROLE -> RailRewardsProcessor (claimRewards only)
   PAUSER_ROLE
 
+stRAIL:
+  PROCESSOR_ROLE -> staking processor and exit processor
+
 qRAIL:
   DEFAULT_ADMIN_ROLE
-  MINTER_ROLE
-  BURNER_ROLE
+  mintQueuedRail -> only positionManager.strategy() (stRAIL)
 
 WithdrawalRequest:
   existing roles

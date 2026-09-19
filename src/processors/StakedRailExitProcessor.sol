@@ -40,8 +40,7 @@ contract StakedRailExitProcessor {
         uint256 positionsQueued;
         uint256[] memory activeStakeIds = positionManager.activeStakeIdsList();
         for (uint256 i = 0; i < activeStakeIds.length && positionsQueued < maxPositions; i++) {
-            uint256 queuedPrincipal = positionManager.queuePosition(activeStakeIds[i]);
-            _mintQueuedRailToStrategy(queuedPrincipal);
+            uint256 queuedPrincipal = _queuePosition(activeStakeIds[i]);
             queued += queuedPrincipal;
             positionsQueued++;
             if (queued >= needed) return;
@@ -50,13 +49,14 @@ contract StakedRailExitProcessor {
         revert InsufficientQueuedRail(requiredAssets, available + queued);
     }
 
-    function _mintQueuedRailToStrategy(uint256 amount) internal {
+    function _queuePosition(uint256 stakeId) internal returns (uint256) {
         address[] memory targets = new address[](1);
         uint256[] memory values = new uint256[](1);
         bytes[] memory data = new bytes[](1);
-        targets[0] = address(qRail);
-        data[0] = abi.encodeCall(QueuedRailStrategy.mintQueuedRail, (address(stRail), amount));
-        qRail.processor(targets, values, data);
+        targets[0] = address(stRail);
+        data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, (stakeId));
+        bytes[] memory results = stRail.processor(targets, values, data);
+        return abi.decode(results[0], (uint256));
     }
 
     error ZeroAddress();

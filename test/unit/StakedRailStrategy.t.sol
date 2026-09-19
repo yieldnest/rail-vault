@@ -134,12 +134,11 @@ contract StakedRailStrategyTest is Test {
 
         manager.setStrategy(address(strategy));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
-        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(exitProcessor));
+        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
-        qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
         manager.grantRole(manager.CLAIMER_ROLE(), address(resolver));
-        manager.grantRole(manager.QUEUER_ROLE(), address(exitProcessor));
+        manager.grantRole(manager.QUEUER_ROLE(), address(strategy));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
@@ -149,14 +148,67 @@ contract StakedRailStrategyTest is Test {
     }
 
     function testMintQueuedRailRejectsDirectCalls() external {
-        vm.expectRevert(QueuedRailStrategy.OnlyProcessorSelfCall.selector);
+        vm.expectRevert(QueuedRailStrategy.OnlyStakedRail.selector);
         vm.prank(user);
         qRail.mintQueuedRail(user, 1000 ether);
 
-        vm.expectRevert(QueuedRailStrategy.OnlyProcessorSelfCall.selector);
+        vm.expectRevert(QueuedRailStrategy.OnlyStakedRail.selector);
         vm.prank(address(exitProcessor));
         qRail.mintQueuedRail(user, 1000 ether);
         assertEq(qRail.totalSupply(), 0);
+    }
+
+    function testQueuePositionRejectsDirectCalls() external {
+        vm.expectRevert(StakedRailStrategy.OnlyProcessorSelfCall.selector);
+        vm.prank(address(exitProcessor));
+        strategy.queuePosition(0);
+
+        vm.expectRevert(abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)", address(exitProcessor), manager.QUEUER_ROLE()
+        ));
+        vm.prank(address(exitProcessor));
+        manager.queuePosition(0);
+    }
+
+    function testQueuePositionAtomicallyMintsBacking() external {
+        _deposit(user, 1000 ether);
+        stakingProcessor.rebalanceStaking(1);
+        _queueThroughStrategy(0);
+
+        assertEq(manager.activePrincipal(), 0);
+        assertEq(manager.queuedPrincipal(), 1000 ether);
+        assertEq(qRail.totalSupply(), 1000 ether);
+        assertEq(qRail.balanceOf(address(strategy)), 1000 ether);
+        assertEq(strategy.totalBaseAssets(), 1000 ether);
+    }
+
+    function testQueuePositionRollsBackWhenMintFails() external {
+        _deposit(user, 1000 ether);
+        stakingProcessor.rebalanceStaking(1);
+        vm.mockCallRevert(
+            address(qRail),
+            abi.encodeCall(QueuedRailStrategy.mintQueuedRail, (address(strategy), 1000 ether)),
+            abi.encodeWithSignature("MintFailed()")
+        );
+        vm.expectRevert();
+        _queueThroughStrategy(0);
+
+        (,,, uint256 locktime,) = staking.stakes(address(manager), 0);
+        assertEq(locktime, 0);
+        assertEq(manager.activePrincipal(), 1000 ether);
+        assertEq(manager.queuedPrincipal(), 0);
+        assertEq(manager.activePositionCount(), 1);
+        assertEq(qRail.totalSupply(), 0);
+    }
+
+    function _queueThroughStrategy(uint256 stakeId) internal {
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(strategy);
+        data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, (stakeId));
+        vm.prank(address(exitProcessor));
+        strategy.processor(targets, values, data);
     }
 
     function testMintQueuedRailRejectsUnauthorizedProcessorCalls() external {
@@ -184,7 +236,7 @@ contract StakedRailStrategyTest is Test {
         vm.prank(address(resolver));
         manager.queuePosition(0);
 
-        vm.prank(address(exitProcessor));
+        vm.prank(address(strategy));
         manager.queuePosition(0);
         vm.warp(block.timestamp + 30 days + 1);
 
@@ -330,7 +382,7 @@ contract StakedRailStrategyTest is Test {
         IVault.FunctionRule memory rule = _emptyRule();
         strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
-        qRail.setProcessorRule(address(qRail), QueuedRailStrategy.mintQueuedRail.selector, rule);
+        strategy.setProcessorRule(address(strategy), StakedRailStrategy.queuePosition.selector, rule);
     }
 
     function _emptyRule() internal pure returns (IVault.FunctionRule memory rule) {

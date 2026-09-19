@@ -205,12 +205,11 @@ contract DeployStakedRail is Script {
     function _wire(Config memory config, Deployed memory deployed) private {
         deployed.manager.setStrategy(address(deployed.strategy));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.stakingProcessor));
-        deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.exitProcessor));
+        deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.exitProcessor));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_MANAGER_ROLE(), config.admin);
-        deployed.qRail.grantRole(deployed.qRail.PROCESSOR_MANAGER_ROLE(), config.admin);
         _setProcessorRules(config, deployed);
         deployed.manager.grantRole(deployed.manager.CLAIMER_ROLE(), address(deployed.resolver));
-        deployed.manager.grantRole(deployed.manager.QUEUER_ROLE(), address(deployed.exitProcessor));
+        deployed.manager.grantRole(deployed.manager.QUEUER_ROLE(), address(deployed.strategy));
         deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.rewardsProcessor));
         deployed.bagFactory.grantRole(deployed.bagFactory.CREATOR_ROLE(), address(deployed.withdrawalRequest));
         deployed.withdrawalRequest.setWithdrawer(address(deployed.withdrawer));
@@ -224,7 +223,7 @@ contract DeployStakedRail is Script {
         deployed.strategy.setProcessorRule(
             address(deployed.manager), RailStakePositionManager.createPosition.selector, rule
         );
-        deployed.qRail.setProcessorRule(address(deployed.qRail), QueuedRailStrategy.mintQueuedRail.selector, rule);
+        deployed.strategy.setProcessorRule(address(deployed.strategy), StakedRailStrategy.queuePosition.selector, rule);
     }
 
     function _emptyRule() private pure returns (IVault.FunctionRule memory rule) {
