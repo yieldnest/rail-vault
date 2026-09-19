@@ -19,7 +19,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
     address public strategy;
 
     uint256[] private activeStakeIds;
-    uint256[] private queuedStakeIds;
     uint256 public activePrincipal;
     uint256 public queuedPrincipal;
 
@@ -61,7 +60,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
         (,,, locktime,) = staking.stakes(address(this), stakeId);
 
         _removeStakeId(activeStakeIds, stakeId);
-        queuedStakeIds.push(stakeId);
         activePrincipal -= principal;
         queuedPrincipal += principal;
         emit PositionQueued(stakeId, principal, locktime);
@@ -76,7 +74,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
         if (!isClaimablePosition(locktime, claimedTime)) revert PositionNotMatured();
 
         staking.claim(stakeId);
-        _removeStakeId(queuedStakeIds, stakeId);
         queuedPrincipal -= amount;
         rail.safeTransfer(receiver, amount);
 
@@ -124,16 +121,8 @@ contract RailStakePositionManager is AccessControl, Pausable {
         return activeStakeIds.length;
     }
 
-    function queuedPositionCount() external view returns (uint256) {
-        return queuedStakeIds.length;
-    }
-
     function activeStakeIdsList() external view returns (uint256[] memory) {
         return activeStakeIds;
-    }
-
-    function queuedStakeIdsList() external view returns (uint256[] memory) {
-        return queuedStakeIds;
     }
 
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {

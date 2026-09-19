@@ -55,7 +55,6 @@ contract RailStakePositionManagerIntegrationTest is Test {
         assertEq(manager.activePrincipal(), amount);
         assertEq(manager.queuedPrincipal(), 0);
         assertEq(manager.activePositionCount(), 1);
-        assertEq(manager.queuedPositionCount(), 0);
 
         (, uint256 principal,, uint256 locktime, uint256 claimedTime) = staking.stakes(address(manager), stakeId);
         assertEq(principal, amount);
@@ -73,7 +72,6 @@ contract RailStakePositionManagerIntegrationTest is Test {
         assertEq(manager.activePrincipal(), 0);
         assertEq(manager.queuedPrincipal(), amount);
         assertEq(manager.activePositionCount(), 0);
-        assertEq(manager.queuedPositionCount(), 1);
 
         (,,, locktime, claimedTime) = staking.stakes(address(manager), stakeId);
         assertGt(locktime, block.timestamp);
@@ -98,7 +96,6 @@ contract RailStakePositionManagerIntegrationTest is Test {
         assertEq(manager.activePrincipal(), 0);
         assertEq(manager.queuedPrincipal(), 0);
         assertEq(manager.activePositionCount(), 0);
-        assertEq(manager.queuedPositionCount(), 0);
         assertEq(rail.balanceOf(receiver), amount);
 
         (,,,, claimedTime) = staking.stakes(address(manager), stakeId);

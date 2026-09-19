@@ -249,7 +249,9 @@ contract StakedRailStrategyTest is Test {
         assertEq(manager.activePrincipal(), 3000 ether);
         assertEq(manager.queuedPrincipal(), 2000 ether);
 
-        uint256[] memory stakeIds = manager.queuedStakeIdsList();
+        uint256[] memory stakeIds = new uint256[](2);
+        stakeIds[0] = 0;
+        stakeIds[1] = 1;
         vm.warp(block.timestamp + 30 days + 1);
         resolver.claimMaturedPositions(stakeIds);
         assertEq(rail.balanceOf(address(qRail)), 2000 ether);

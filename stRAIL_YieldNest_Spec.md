@@ -243,8 +243,9 @@ Use actual deployed RAILGUN state wherever possible rather than
 duplicating timing assumptions.
 Separate active-position and claimable-position checks read the principal,
 locktime, and claimedTime directly from RAILGUN. No per-position metadata
-is stored locally; only active/queued stake-ID lists and aggregate principal
-totals are maintained. Claimed stakes are rejected first; claims require
+is stored locally; only the active stake-ID list and aggregate principal
+totals are maintained. Keepers discover queued IDs from `PositionQueued`
+events and supply them when claiming. Claimed stakes are rejected first; claims require
 a nonzero locktime strictly less than the current timestamp. Nonexistent
 stake IDs revert in RAILGUN's stake lookup.
 
