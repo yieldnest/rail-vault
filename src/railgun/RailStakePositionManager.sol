@@ -21,9 +21,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
     }
 
     struct Position {
-        uint256 stakeId;
         uint256 principal;
-        uint64 queuedAt;
         PositionStatus status;
     }
 
@@ -64,8 +62,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
     function createPosition(uint256 amount) external onlyStrategy whenNotPaused returns (uint256 stakeId) {
         rail.forceApprove(address(staking), amount);
         stakeId = staking.stake(amount);
-        positions[stakeId] =
-            Position({stakeId: stakeId, principal: amount, queuedAt: 0, status: PositionStatus.ACTIVE});
+        positions[stakeId] = Position({principal: amount, status: PositionStatus.ACTIVE});
         activeStakeIds.push(stakeId);
         activePrincipal += amount;
         emit PositionCreated(stakeId, amount);
@@ -85,7 +82,6 @@ contract RailStakePositionManager is AccessControl, Pausable {
 
         _removeStakeId(activeStakeIds, stakeId);
         queuedStakeIds.push(stakeId);
-        position.queuedAt = uint64(block.timestamp);
         position.status = block.timestamp > locktime ? PositionStatus.CLAIMABLE : PositionStatus.UNSTAKING;
         activePrincipal -= principal;
         queuedPrincipal += principal;

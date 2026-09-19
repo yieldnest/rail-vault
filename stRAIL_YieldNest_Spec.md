@@ -227,9 +227,7 @@ enum PositionStatus {
 }
 
 struct Position {
-    uint256 stakeId;
     uint256 principal;
-    uint64 queuedAt;
     PositionStatus status;
 }
 ```
