@@ -207,8 +207,10 @@ contract DeployStakedRail is Script {
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.stakingProcessor));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.exitProcessor));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_MANAGER_ROLE(), config.admin);
+        deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.resolver));
+        deployed.qRail.grantRole(deployed.qRail.PROCESSOR_MANAGER_ROLE(), config.admin);
         _setProcessorRules(config, deployed);
-        deployed.manager.grantRole(deployed.manager.CLAIMER_ROLE(), address(deployed.resolver));
+        deployed.manager.grantRole(deployed.manager.CLAIMER_ROLE(), address(deployed.qRail));
         deployed.manager.grantRole(deployed.manager.QUEUER_ROLE(), address(deployed.strategy));
         deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.rewardsProcessor));
         deployed.bagFactory.grantRole(deployed.bagFactory.CREATOR_ROLE(), address(deployed.withdrawalRequest));
@@ -224,6 +226,15 @@ contract DeployStakedRail is Script {
             address(deployed.manager), RailStakePositionManager.createPosition.selector, rule
         );
         deployed.strategy.setProcessorRule(address(deployed.strategy), StakedRailStrategy.queuePosition.selector, rule);
+
+        rule.paramRules = new IVault.ParamRule[](2);
+        rule.paramRules[0].paramType = IVault.ParamType.UINT256;
+        rule.paramRules[1].paramType = IVault.ParamType.ADDRESS;
+        rule.paramRules[1].allowList = new address[](1);
+        rule.paramRules[1].allowList[0] = address(deployed.qRail);
+        deployed.qRail.setProcessorRule(address(deployed.manager), RailStakePositionManager.claimPosition.selector, rule);
+        rule.paramRules[0].isArray = true;
+        deployed.qRail.setProcessorRule(address(deployed.manager), RailStakePositionManager.claimMaturedPositions.selector, rule);
     }
 
     function _emptyRule() private pure returns (IVault.FunctionRule memory rule) {

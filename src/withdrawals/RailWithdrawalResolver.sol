@@ -32,7 +32,13 @@ contract RailWithdrawalResolver is AccessControl {
     }
 
     function claimMaturedPositions(uint256[] calldata stakeIds) external onlyRole(KEEPER_ROLE) returns (uint256) {
-        return positionManager.claimMaturedPositions(stakeIds, address(qRail));
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(positionManager);
+        data[0] = abi.encodeCall(RailStakePositionManager.claimMaturedPositions, (stakeIds, address(qRail)));
+        bytes[] memory results = qRail.processor(targets, values, data);
+        return abi.decode(results[0], (uint256));
     }
 
     function resolveRequests(uint256 maxRequests) external onlyRole(KEEPER_ROLE) returns (uint256 resolved) {

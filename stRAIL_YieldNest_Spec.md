@@ -530,7 +530,7 @@ Use existing YieldNest strategy roles plus:
 RailStakePositionManager:
   DEFAULT_ADMIN_ROLE
   QUEUER_ROLE -> StakedRailStrategy (queuePosition)
-  CLAIMER_ROLE -> RailWithdrawalResolver (claimPosition / claimMaturedPositions)
+  CLAIMER_ROLE -> QueuedRailStrategy (claimPosition / claimMaturedPositions)
   KEEPER_ROLE -> RailRewardsProcessor (claimRewards only)
   PAUSER_ROLE
 
@@ -539,6 +539,7 @@ stRAIL:
 
 qRAIL:
   DEFAULT_ADMIN_ROLE
+  PROCESSOR_ROLE -> RailWithdrawalResolver
   mintQueuedRail -> only positionManager.strategy() (stRAIL)
 
 WithdrawalRequest:
@@ -548,6 +549,11 @@ WithdrawalRequest:
 
 The resolver module, rather than a normal keeper EOA, should hold
 settlement authority.
+
+The resolver claims matured stakes through qRAIL's processor. Only qRAIL
+receives the manager's `CLAIMER_ROLE` in deployment. Processor rules allow
+single and batch claim calls to the manager and restrict the receiver to
+qRAIL itself. Governance can manage these rules and role grants.
 
 ## Governance Control and Upgrades
 

@@ -138,8 +138,10 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
+        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
+        qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
-        manager.grantRole(manager.CLAIMER_ROLE(), address(resolver));
+        manager.grantRole(manager.CLAIMER_ROLE(), address(qRail));
         manager.grantRole(manager.QUEUER_ROLE(), address(strategy));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
@@ -219,6 +221,15 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
         strategy.setProcessorRule(address(strategy), StakedRailStrategy.queuePosition.selector, rule);
+
+        rule.paramRules = new IVault.ParamRule[](2);
+        rule.paramRules[0].paramType = IVault.ParamType.UINT256;
+        rule.paramRules[1].paramType = IVault.ParamType.ADDRESS;
+        rule.paramRules[1].allowList = new address[](1);
+        rule.paramRules[1].allowList[0] = address(qRail);
+        qRail.setProcessorRule(address(manager), RailStakePositionManager.claimPosition.selector, rule);
+        rule.paramRules[0].isArray = true;
+        qRail.setProcessorRule(address(manager), RailStakePositionManager.claimMaturedPositions.selector, rule);
     }
 
     function _emptyRule() internal pure returns (IVault.FunctionRule memory rule) {

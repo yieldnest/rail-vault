@@ -136,8 +136,10 @@ contract StakedRailStrategyTest is Test {
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
+        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
+        qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
-        manager.grantRole(manager.CLAIMER_ROLE(), address(resolver));
+        manager.grantRole(manager.CLAIMER_ROLE(), address(qRail));
         manager.grantRole(manager.QUEUER_ROLE(), address(strategy));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
@@ -267,8 +269,44 @@ contract StakedRailStrategyTest is Test {
         vm.prank(user);
         manager.claimPosition(0, user);
 
+        assertEq(resolver.claimMaturedPositions(ids), 1000 ether);
+    }
+
+    function testClaimRulesRestrictReceiverToQueuedRail() external {
+        _deposit(user, 1000 ether);
+        stakingProcessor.rebalanceStaking(1);
+        _queueThroughStrategy(0);
+        vm.warp(block.timestamp + 30 days + 1);
+
+        vm.expectRevert(abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), manager.CLAIMER_ROLE()
+        ));
         vm.prank(address(resolver));
-        assertEq(manager.claimMaturedPositions(ids, address(qRail)), 1000 ether);
+        manager.claimPosition(0, user);
+
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(manager);
+        data[0] = abi.encodeCall(RailStakePositionManager.claimPosition, (0, user));
+        vm.expectRevert(abi.encodeWithSignature("AddressNotInAllowlist(address)", user));
+        vm.prank(address(resolver));
+        qRail.processor(targets, values, data);
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 0;
+        data[0] = abi.encodeCall(RailStakePositionManager.claimMaturedPositions, (ids, user));
+        vm.expectRevert(abi.encodeWithSignature("AddressNotInAllowlist(address)", user));
+        vm.prank(address(resolver));
+        qRail.processor(targets, values, data);
+        assertEq(manager.queuedPrincipal(), 1000 ether);
+        assertEq(rail.balanceOf(user), 0);
+
+        data[0] = abi.encodeCall(RailStakePositionManager.claimPosition, (0, address(qRail)));
+        vm.prank(address(resolver));
+        qRail.processor(targets, values, data);
+        assertEq(manager.queuedPrincipal(), 0);
+        assertEq(rail.balanceOf(address(qRail)), 1000 ether);
     }
 
     function testDepositAndChunkedStakingAccounting() external {
@@ -383,6 +421,15 @@ contract StakedRailStrategyTest is Test {
         strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
         strategy.setProcessorRule(address(strategy), StakedRailStrategy.queuePosition.selector, rule);
+
+        rule.paramRules = new IVault.ParamRule[](2);
+        rule.paramRules[0].paramType = IVault.ParamType.UINT256;
+        rule.paramRules[1].paramType = IVault.ParamType.ADDRESS;
+        rule.paramRules[1].allowList = new address[](1);
+        rule.paramRules[1].allowList[0] = address(qRail);
+        qRail.setProcessorRule(address(manager), RailStakePositionManager.claimPosition.selector, rule);
+        rule.paramRules[0].isArray = true;
+        qRail.setProcessorRule(address(manager), RailStakePositionManager.claimMaturedPositions.selector, rule);
     }
 
     function _emptyRule() internal pure returns (IVault.FunctionRule memory rule) {
