@@ -8,9 +8,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {IRailgunGovernorRewards} from "./IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "./IRailgunStaking.sol";
+import {ActiveStakeList} from "../lib/ActiveStakeList.sol";
 
 contract RailStakePositionManager is AccessControl, Pausable {
     using SafeERC20 for IERC20;
+    using ActiveStakeList for ActiveStakeList.List;
 
     string public constant RAIL_STAKE_POSITION_MANAGER_VERSION = "0.1.0";
 
@@ -22,7 +24,9 @@ contract RailStakePositionManager is AccessControl, Pausable {
     IERC20 public immutable rail;
     IRailgunStaking public immutable staking;
 
-    uint256[] private activeStakeIds;
+    // Stake ID zero is valid, so use an explicit end-of-list sentinel.
+    uint256 public constant NO_STAKE_ID = ActiveStakeList.NO_STAKE_ID;
+    ActiveStakeList.List private activeStakes;
     uint256 public activePrincipal;
     uint256 public queuedPrincipal;
 
@@ -40,7 +44,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
     function createPosition(uint256 amount) external onlyRole(CREATOR_ROLE) whenNotPaused returns (uint256 stakeId) {
         rail.forceApprove(address(staking), amount);
         stakeId = staking.stake(amount);
-        activeStakeIds.push(stakeId);
+        activeStakes.add(stakeId);
         activePrincipal += amount;
         emit PositionCreated(stakeId, amount);
     }
@@ -52,7 +56,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         staking.unlock(stakeId);
         (,,, locktime,) = staking.stakes(address(this), stakeId);
 
-        _removeStakeId(activeStakeIds, stakeId);
+        activeStakes.remove(stakeId);
         activePrincipal -= principal;
         queuedPrincipal += principal;
         emit PositionQueued(stakeId, principal, locktime);
@@ -111,11 +115,23 @@ contract RailStakePositionManager is AccessControl, Pausable {
     }
 
     function activePositionCount() external view returns (uint256) {
-        return activeStakeIds.length;
+        return activeStakes.count;
     }
 
-    function activeStakeIdsList() external view returns (uint256[] memory) {
-        return activeStakeIds;
+    function activeStakeIdsList() external view returns (uint256[] memory ids) {
+        return activeStakes.toArray();
+    }
+
+    function activeStakeHead() external view returns (uint256) {
+        return activeStakes.head();
+    }
+
+    function activeStakeTail() external view returns (uint256) {
+        return activeStakes.tail();
+    }
+
+    function nextActiveStakeId(uint256 stakeId) external view returns (uint256) {
+        return activeStakes.next[stakeId];
     }
 
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -146,19 +162,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         return isQueuedPosition(locktime, claimedTime) && block.timestamp > locktime;
     }
 
-    function _removeStakeId(uint256[] storage values, uint256 stakeId) internal {
-        for (uint256 i = 0; i < values.length; i++) {
-            if (values[i] == stakeId) {
-                values[i] = values[values.length - 1];
-                values.pop();
-                return;
-            }
-        }
-        revert UnknownStakeId();
-    }
-
     error ZeroAddress();
-    error UnknownStakeId();
     error InvalidPositionStatus();
     error PositionNotMatured();
 }

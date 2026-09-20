@@ -22,7 +22,10 @@ contract StakedRailExitProcessor {
         positionManager = positionManagerAddress;
     }
 
-    function exitToQueuedRail(uint256 shares, address receiver, uint256 maxPositions) external returns (uint256 assets) {
+    function exitToQueuedRail(uint256 shares, address receiver, uint256 maxPositions)
+        external
+        returns (uint256 assets)
+    {
         if (shares == 0) revert ZeroShares();
         if (receiver == address(0)) revert ZeroAddress();
 
@@ -38,9 +41,8 @@ contract StakedRailExitProcessor {
         uint256 needed = requiredAssets - available;
         uint256 queued;
         uint256 positionsQueued;
-        uint256[] memory activeStakeIds = positionManager.activeStakeIdsList();
-        for (uint256 i = 0; i < activeStakeIds.length && positionsQueued < maxPositions; i++) {
-            uint256 queuedPrincipal = _queuePosition(activeStakeIds[i]);
+        while (positionManager.activePositionCount() != 0 && positionsQueued < maxPositions) {
+            uint256 queuedPrincipal = _queuePosition(positionManager.activeStakeHead());
             queued += queuedPrincipal;
             positionsQueued++;
             if (queued >= needed) return;

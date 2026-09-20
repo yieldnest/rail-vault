@@ -355,6 +355,51 @@ contract StakedRailStrategyTest is Test {
         assertEq(strategy.maxRedeem(user), 0);
     }
 
+    function testExitsWalkHeadsWithoutReadingFullList() external {
+        _deposit(user, 5000 ether);
+        stakingProcessor.rebalanceStaking(5);
+        vm.mockCallRevert(
+            address(manager), abi.encodeCall(RailStakePositionManager.activeStakeIdsList, ()), "no eager list reads"
+        );
+        vm.startPrank(user);
+        strategy.approve(address(exitProcessor), 3000 ether);
+        exitProcessor.exitToQueuedRail(1000 ether, user, 1);
+        assertEq(manager.activeStakeHead(), 1);
+        exitProcessor.exitToQueuedRail(2000 ether, user, 2);
+        vm.stopPrank();
+        assertEq(manager.activeStakeHead(), 3);
+        assertEq(manager.activeStakeTail(), 4);
+        assertEq(manager.activePositionCount(), 2);
+        assertEq(manager.activePrincipal(), 2000 ether);
+        assertEq(manager.queuedPrincipal(), 3000 ether);
+        assertEq(qRail.balanceOf(user), 3000 ether);
+        vm.clearMockedCalls();
+        uint256[] memory ids = manager.activeStakeIdsList();
+        assertEq(ids[0], 3);
+        assertEq(ids[1], 4);
+    }
+
+    function testExitPositionLimitRollsBackListAndMinting() external {
+        _deposit(user, 3000 ether);
+        stakingProcessor.rebalanceStaking(3);
+        vm.startPrank(user);
+        strategy.approve(address(exitProcessor), 2000 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(StakedRailExitProcessor.InsufficientQueuedRail.selector, 2000 ether, 1000 ether)
+        );
+        exitProcessor.exitToQueuedRail(2000 ether, user, 1);
+        vm.stopPrank();
+        assertEq(manager.activeStakeHead(), 0);
+        assertEq(manager.activeStakeTail(), 2);
+        assertEq(manager.nextActiveStakeId(0), 1);
+        assertEq(manager.nextActiveStakeId(1), 2);
+        assertEq(manager.activePositionCount(), 3);
+        assertEq(manager.activePrincipal(), 3000 ether);
+        assertEq(manager.queuedPrincipal(), 0);
+        assertEq(qRail.totalSupply(), 0);
+        assertEq(strategy.balanceOf(user), 3000 ether);
+    }
+
     function testStakingLeavesRemainderAndHonorsOperationLimit() external {
         _deposit(user, 2500 ether);
         vm.prank(user);

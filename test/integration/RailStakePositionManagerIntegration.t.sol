@@ -176,16 +176,16 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _create(1000 ether);
         _create(2300 ether);
         _create(400 ether);
-        _queue(1);
-        vm.warp(block.timestamp + 5 days);
         _queue(0);
+        vm.warp(block.timestamp + 5 days);
+        _queue(1);
         _assertAccounting();
 
-        (,,, uint256 unlockAt,) = staking.stakes(address(manager), 0);
+        (,,, uint256 unlockAt,) = staking.stakes(address(manager), 1);
         vm.warp(unlockAt + 1);
-        _claim(0);
-        _assertAccounting();
         _claim(1);
+        _assertAccounting();
+        _claim(0);
         _assertAccounting();
         assertEq(manager.activeStakeIdsList()[0], 2);
         assertEq(manager.activePrincipal(), 400 ether);
@@ -451,8 +451,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
                 _assertAccounting();
             }
             for (uint256 i = 0; i < 4; i++) {
-                uint256[] memory active = manager.activeStakeIdsList();
-                _queue(active[(round + i) % active.length]);
+                _queue(manager.activeStakeHead());
                 _assertAccounting();
             }
             // Newer queued stakes must survive claims of older, mature stakes.
@@ -469,8 +468,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
             vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
         }
         while (manager.activePositionCount() != 0) {
-            uint256[] memory active = manager.activeStakeIdsList();
-            _queue(active[active.length / 2]);
+            _queue(manager.activeStakeHead());
             _assertAccounting();
         }
         vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
@@ -531,22 +529,84 @@ contract RailStakePositionManagerIntegrationTest is Test {
             _create((i + 1) * 1000 ether);
             _assertAccounting();
         }
-        _queue(1);
+        _queue(0);
         uint256[] memory expected = new uint256[](3);
-        expected[0] = 0;
-        expected[1] = 3;
-        expected[2] = 2;
+        expected[0] = 1;
+        expected[1] = 2;
+        expected[2] = 3;
         assertEq(manager.activeStakeIdsList(), expected);
         _assertAccounting();
-        _queue(2);
-        assertEq(manager.activeStakeIdsList(), _pair(0, 3));
+        _queue(1);
+        assertEq(manager.activeStakeIdsList(), _pair(2, 3));
         _assertAccounting();
-        _queue(0);
+        _queue(2);
         assertEq(manager.activeStakeIdsList()[0], 3);
         _assertAccounting();
         _queue(3);
         assertEq(manager.activeStakeIdsList().length, 0);
         _assertAccounting();
+    }
+
+    function testQueuePositionRemovesMiddleAndPreservesOrder() external {
+        _create(1000 ether);
+        _create(2000 ether);
+        _create(3000 ether);
+        _queue(1);
+        assertEq(manager.activeStakeIdsList(), _pair(0, 2));
+        assertEq(manager.activePrincipal(), 4000 ether);
+        assertEq(manager.queuedPrincipal(), 2000 ether);
+        _assertAccounting();
+        vm.expectRevert(RailStakePositionManager.InvalidPositionStatus.selector);
+        vm.prank(keeper);
+        manager.queuePosition(1);
+        _assertAccounting();
+        _queue(0);
+        _assertAccounting();
+    }
+
+    function testQueuePositionRemovesTailThenAppends() external {
+        _create(1000 ether);
+        _create(2000 ether);
+        _create(3000 ether);
+        _queue(2);
+        assertEq(manager.activeStakeTail(), 1);
+        assertEq(manager.nextActiveStakeId(1), manager.NO_STAKE_ID());
+        _assertAccounting();
+        uint256 id = _create(4000 ether);
+        assertEq(manager.nextActiveStakeId(1), id);
+        assertEq(manager.activeStakeTail(), id);
+        _assertAccounting();
+        _queue(1);
+        _assertAccounting();
+        _queue(id);
+        _assertAccounting();
+        _queue(0);
+        _assertAccounting();
+    }
+
+    function testActiveListCanDrainAndRefillWhileClaimsRemainQueued() external {
+        _assertAccounting();
+        for (uint256 round = 0; round < 4; round++) {
+            uint256 first = _create(1000 ether);
+            assertEq(manager.activeStakeHead(), first);
+            assertEq(manager.activeStakeTail(), first);
+            _assertAccounting();
+            uint256 second = _create(2000 ether);
+            assertEq(manager.nextActiveStakeId(first), second);
+            _assertAccounting();
+            _queue(first);
+            assertEq(manager.activeStakeHead(), second);
+            _assertAccounting();
+            _queue(second);
+            assertEq(manager.activeStakeHead(), manager.NO_STAKE_ID());
+            assertEq(manager.activeStakeTail(), manager.NO_STAKE_ID());
+            _assertAccounting();
+        }
+        vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
+        for (uint256 id = 0; id < 8; id++) {
+            _claim(id);
+            _assertAccounting();
+        }
     }
 
     function testIsActivePosition() external view {
@@ -632,9 +692,11 @@ contract RailStakePositionManagerIntegrationTest is Test {
         assertEq(manager.queuePosition(id), expectedAmounts[id]);
         uint256[] memory afterIds = manager.activeStakeIdsList();
         assertEq(afterIds.length, beforeIds.length - 1);
-        for (uint256 i = 0; i < afterIds.length; i++) {
-            assertEq(afterIds[i], beforeIds[i] == id ? beforeIds[beforeIds.length - 1] : beforeIds[i]);
+        uint256 index;
+        for (uint256 i = 0; i < beforeIds.length; i++) {
+            if (beforeIds[i] != id) assertEq(afterIds[index++], beforeIds[i]);
         }
+        assertEq(manager.nextActiveStakeId(id), 0, "removed link not cleared");
         (,,, uint256 locktime, uint256 claimedTime) = staking.stakes(address(manager), id);
         assertEq(locktime, block.timestamp + staking.STAKE_LOCKTIME());
         assertEq(claimedTime, 0);
@@ -680,11 +742,21 @@ contract RailStakePositionManagerIntegrationTest is Test {
         uint256[] memory ids = manager.activeStakeIdsList();
         bool[] memory seen = new bool[](count);
         assertEq(ids.length, manager.activePositionCount());
+        uint256 cursor = manager.activeStakeHead();
+        if (ids.length == 0) {
+            assertEq(manager.activeStakeTail(), manager.NO_STAKE_ID());
+        } else {
+            assertEq(manager.activeStakeTail(), ids[ids.length - 1]);
+        }
         for (uint256 i = 0; i < ids.length; i++) {
+            assertEq(cursor, ids[i], "list traversal mismatch");
+            if (i != 0) assertGt(ids[i], ids[i - 1], "not oldest first");
             assertLt(ids[i], count);
             assertFalse(seen[ids[i]], "duplicate active ID");
             seen[ids[i]] = true;
+            cursor = manager.nextActiveStakeId(cursor);
         }
+        assertEq(cursor, manager.NO_STAKE_ID(), "list does not terminate");
         for (uint256 i = 0; i < count; i++) {
             (address delegate, uint256 amount, uint256 staketime, uint256 locktime, uint256 claimedTime) =
                 staking.stakes(address(manager), i);
