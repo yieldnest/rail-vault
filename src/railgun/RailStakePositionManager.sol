@@ -8,11 +8,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {IRailgunGovernorRewards} from "./IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "./IRailgunStaking.sol";
-import {ActiveStakeList} from "../lib/ActiveStakeList.sol";
+import {LinkedListUInt256} from "../lib/LinkedListUInt256.sol";
 
 contract RailStakePositionManager is AccessControl, Pausable {
     using SafeERC20 for IERC20;
-    using ActiveStakeList for ActiveStakeList.List;
+    using LinkedListUInt256 for LinkedListUInt256.List;
 
     string public constant RAIL_STAKE_POSITION_MANAGER_VERSION = "0.1.0";
 
@@ -25,8 +25,8 @@ contract RailStakePositionManager is AccessControl, Pausable {
     IRailgunStaking public immutable staking;
 
     // Stake ID zero is valid, so use an explicit end-of-list sentinel.
-    uint256 public constant NO_STAKE_ID = ActiveStakeList.NO_STAKE_ID;
-    ActiveStakeList.List private activeStakes;
+    uint256 public constant NO_STAKE_ID = LinkedListUInt256.NO_STAKE_ID;
+    LinkedListUInt256.List private activeStakes;
     uint256 public activePrincipal;
     uint256 public queuedPrincipal;
 
