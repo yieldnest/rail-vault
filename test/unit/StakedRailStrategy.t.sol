@@ -164,19 +164,19 @@ contract StakedRailStrategyTest is Test {
     function testQueuePositionRejectsDirectCalls() external {
         vm.expectRevert(StakedRailStrategy.OnlyProcessorSelfCall.selector);
         vm.prank(address(exitProcessor));
-        strategy.queuePosition(0);
+        strategy.queuePosition();
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)", address(exitProcessor), manager.QUEUER_ROLE()
         ));
         vm.prank(address(exitProcessor));
-        manager.queuePosition(0);
+        manager.queuePosition();
     }
 
     function testQueuePositionAtomicallyMintsBacking() external {
         _deposit(user, 1000 ether);
         stakingProcessor.rebalanceStaking(1);
-        _queueThroughStrategy(0);
+        _queueThroughStrategy();
 
         assertEq(manager.activePrincipal(), 0);
         assertEq(manager.queuedPrincipal(), 1000 ether);
@@ -194,7 +194,7 @@ contract StakedRailStrategyTest is Test {
             abi.encodeWithSignature("MintFailed()")
         );
         vm.expectRevert();
-        _queueThroughStrategy(0);
+        _queueThroughStrategy();
 
         (,,, uint256 locktime,) = staking.stakes(address(manager), 0);
         assertEq(locktime, 0);
@@ -204,12 +204,12 @@ contract StakedRailStrategyTest is Test {
         assertEq(qRail.totalSupply(), 0);
     }
 
-    function _queueThroughStrategy(uint256 stakeId) internal {
+    function _queueThroughStrategy() internal {
         address[] memory targets = new address[](1);
         uint256[] memory values = new uint256[](1);
         bytes[] memory data = new bytes[](1);
         targets[0] = address(strategy);
-        data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, (stakeId));
+        data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, ());
         vm.prank(address(exitProcessor));
         strategy.processor(targets, values, data);
     }
@@ -237,10 +237,10 @@ contract StakedRailStrategyTest is Test {
             "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), manager.QUEUER_ROLE()
         ));
         vm.prank(address(resolver));
-        manager.queuePosition(0);
+        manager.queuePosition();
 
         vm.prank(address(strategy));
-        manager.queuePosition(0);
+        manager.queuePosition();
         vm.warp(block.timestamp + 30 days + 1);
 
         vm.expectRevert(abi.encodeWithSignature(
@@ -262,7 +262,7 @@ contract StakedRailStrategyTest is Test {
             "AccessControlUnauthorizedAccount(address,bytes32)", user, manager.QUEUER_ROLE()
         ));
         vm.prank(user);
-        manager.queuePosition(0);
+        manager.queuePosition();
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)", user, manager.CLAIMER_ROLE()
@@ -276,7 +276,7 @@ contract StakedRailStrategyTest is Test {
     function testClaimRulesRestrictReceiverToQueuedRail() external {
         _deposit(user, 1000 ether);
         stakingProcessor.rebalanceStaking(1);
-        _queueThroughStrategy(0);
+        _queueThroughStrategy();
         vm.warp(block.timestamp + 30 days + 1);
 
         vm.expectRevert(abi.encodeWithSignature(
@@ -355,7 +355,7 @@ contract StakedRailStrategyTest is Test {
         assertEq(strategy.maxRedeem(user), 0);
     }
 
-    function testExitsWalkHeadsWithoutReadingFullList() external {
+    function testExitsPopOldestWithoutReadingFullList() external {
         _deposit(user, 5000 ether);
         stakingProcessor.rebalanceStaking(5);
         vm.mockCallRevert(
@@ -379,7 +379,7 @@ contract StakedRailStrategyTest is Test {
         assertEq(ids[1], 4);
     }
 
-    function testExitPositionLimitRollsBackListAndMinting() external {
+    function testExitPositionLimitRollsBackQueueAndMinting() external {
         _deposit(user, 3000 ether);
         stakingProcessor.rebalanceStaking(3);
         vm.startPrank(user);
@@ -391,8 +391,8 @@ contract StakedRailStrategyTest is Test {
         vm.stopPrank();
         assertEq(manager.activeStakeHead(), 0);
         assertEq(manager.activeStakeTail(), 2);
-        assertEq(manager.nextActiveStakeId(0), 1);
-        assertEq(manager.nextActiveStakeId(1), 2);
+        uint256[] memory ids = manager.activeStakeIdsList();
+        for (uint256 i = 0; i < 3; i++) assertEq(ids[i], i);
         assertEq(manager.activePositionCount(), 3);
         assertEq(manager.activePrincipal(), 3000 ether);
         assertEq(manager.queuedPrincipal(), 0);

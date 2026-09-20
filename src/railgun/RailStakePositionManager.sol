@@ -8,11 +8,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {IRailgunGovernorRewards} from "./IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "./IRailgunStaking.sol";
-import {LinkedListUInt256} from "../lib/LinkedListUInt256.sol";
+import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 
 contract RailStakePositionManager is AccessControl, Pausable {
     using SafeERC20 for IERC20;
-    using LinkedListUInt256 for LinkedListUInt256.List;
+    using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
 
     string public constant RAIL_STAKE_POSITION_MANAGER_VERSION = "0.1.0";
 
@@ -24,9 +24,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
     IERC20 public immutable rail;
     IRailgunStaking public immutable staking;
 
-    // Stake ID zero is valid, so use an explicit end-of-list sentinel.
-    uint256 public constant NO_STAKE_ID = LinkedListUInt256.NO_STAKE_ID;
-    LinkedListUInt256.List private activeStakes;
+    DoubleEndedQueue.Bytes32Deque private activeStakes;
     uint256 public activePrincipal;
     uint256 public queuedPrincipal;
 
@@ -44,19 +42,19 @@ contract RailStakePositionManager is AccessControl, Pausable {
     function createPosition(uint256 amount) external onlyRole(CREATOR_ROLE) whenNotPaused returns (uint256 stakeId) {
         rail.forceApprove(address(staking), amount);
         stakeId = staking.stake(amount);
-        activeStakes.add(stakeId);
+        activeStakes.pushBack(bytes32(stakeId));
         activePrincipal += amount;
         emit PositionCreated(stakeId, amount);
     }
 
-    function queuePosition(uint256 stakeId) external onlyRole(QUEUER_ROLE) whenNotPaused returns (uint256 qRailMinted) {
+    function queuePosition() external onlyRole(QUEUER_ROLE) whenNotPaused returns (uint256 qRailMinted) {
+        uint256 stakeId = uint256(activeStakes.popFront());
         (uint256 principal, uint256 locktime, uint256 claimedTime) = _readPosition(stakeId);
         if (!isActivePosition(locktime, claimedTime)) revert InvalidPositionStatus();
 
         staking.unlock(stakeId);
         (,,, locktime,) = staking.stakes(address(this), stakeId);
 
-        activeStakes.remove(stakeId);
         activePrincipal -= principal;
         queuedPrincipal += principal;
         emit PositionQueued(stakeId, principal, locktime);
@@ -115,23 +113,23 @@ contract RailStakePositionManager is AccessControl, Pausable {
     }
 
     function activePositionCount() external view returns (uint256) {
-        return activeStakes.count;
+        return activeStakes.length();
     }
 
     function activeStakeIdsList() external view returns (uint256[] memory ids) {
-        return activeStakes.toArray();
+        uint256 count = activeStakes.length();
+        ids = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            ids[i] = uint256(activeStakes.at(i));
+        }
     }
 
     function activeStakeHead() external view returns (uint256) {
-        return activeStakes.head();
+        return uint256(activeStakes.front());
     }
 
     function activeStakeTail() external view returns (uint256) {
-        return activeStakes.tail();
-    }
-
-    function nextActiveStakeId(uint256 stakeId) external view returns (uint256) {
-        return activeStakes.next[stakeId];
+        return uint256(activeStakes.back());
     }
 
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {

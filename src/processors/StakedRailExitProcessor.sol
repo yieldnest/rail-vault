@@ -42,7 +42,7 @@ contract StakedRailExitProcessor {
         uint256 queued;
         uint256 positionsQueued;
         while (positionManager.activePositionCount() != 0 && positionsQueued < maxPositions) {
-            uint256 queuedPrincipal = _queuePosition(positionManager.activeStakeHead());
+            uint256 queuedPrincipal = _queuePosition();
             queued += queuedPrincipal;
             positionsQueued++;
             if (queued >= needed) return;
@@ -51,12 +51,12 @@ contract StakedRailExitProcessor {
         revert InsufficientQueuedRail(requiredAssets, available + queued);
     }
 
-    function _queuePosition(uint256 stakeId) internal returns (uint256) {
+    function _queuePosition() internal returns (uint256) {
         address[] memory targets = new address[](1);
         uint256[] memory values = new uint256[](1);
         bytes[] memory data = new bytes[](1);
         targets[0] = address(stRail);
-        data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, (stakeId));
+        data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, ());
         bytes[] memory results = stRail.processor(targets, values, data);
         return abi.decode(results[0], (uint256));
     }

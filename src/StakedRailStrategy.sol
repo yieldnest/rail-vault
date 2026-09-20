@@ -19,9 +19,9 @@ contract StakedRailStrategy is BaseStrategy {
 
     error OnlyProcessorSelfCall();
 
-    function queuePosition(uint256 stakeId) external returns (uint256 principal) {
+    function queuePosition() external returns (uint256 principal) {
         if (msg.sender != address(this)) revert OnlyProcessorSelfCall();
-        principal = positionManager.queuePosition(stakeId);
+        principal = positionManager.queuePosition();
         queuedRail.mintQueuedRail(address(this), principal);
     }
 

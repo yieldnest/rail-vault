@@ -289,28 +289,33 @@ Prefer exact equality outside atomic transitions.
 ## Queueing a Stake
 
 ``` solidity
-function queuePosition(uint256 stakeId)
+function queuePosition()
     external
     onlyRole(QUEUER_ROLE)
     returns (uint256 qRailMinted);
 ```
 
 The manager's `QUEUER_ROLE` belongs to stRAIL. The exit processor invokes
-`StakedRailStrategy.queuePosition(stakeId)` through stRAIL's processor;
+`StakedRailStrategy.queuePosition()` through stRAIL's processor;
 this instruction is restricted to an allowlisted processor self-call.
+
+Active stake IDs are held in OpenZeppelin's `DoubleEndedQueue`. New stakes
+are appended at the back; queueing always consumes the oldest from the
+front in O(1). Callers cannot select an arbitrary stake. The read-only
+`activeStakeIdsList()` enumerates the queue in O(n).
 
 Required ordering within that instruction:
 
-1.  Verify stake exists and is ACTIVE.
-2.  Determine its principal.
-3.  Successfully initiate external unstaking.
-4.  Remove the stake from the active stake-ID list.
+1.  Pop the oldest active stake ID (revert if empty).
+2.  Verify the stake is ACTIVE.
+3.  Determine its principal.
+4.  Successfully initiate external unstaking.
 5.  Decrease `activePrincipal`.
 6.  Increase `queuedPrincipal`.
 7.  stRAIL calls qRAIL to mint the same principal to itself.
 
 The external unstake must succeed before qRAIL is minted. A position
-cannot mint qRAIL twice. Mint failure reverts the unlock and accounting
+cannot mint qRAIL twice. Mint failure reverts the queue pop, unlock and accounting
 updates. qRAIL accepts minting only from its `stakedRail` address,
 configured once by its admin through `setStakedRail` during deployment.
 

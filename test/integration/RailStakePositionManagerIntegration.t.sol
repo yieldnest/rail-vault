@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
@@ -73,7 +74,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
         uint256 amount = 1000 ether;
         uint256 stakeId = _create(amount);
         vm.prank(keeper);
-        uint256 queued = manager.queuePosition(stakeId);
+        uint256 queued = manager.queuePosition();
 
         assertEq(queued, amount);
         assertEq(manager.activePrincipal(), 0);
@@ -86,12 +87,12 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _assertAccounting();
     }
 
-    function testQueuePositionRevertsForQueuedStake() external {
+    function testQueuePositionRevertsAfterQueueDrained() external {
         uint256 stakeId = _create(1000 ether);
         _queue(stakeId);
-        vm.expectRevert(RailStakePositionManager.InvalidPositionStatus.selector);
+        vm.expectRevert(DoubleEndedQueue.QueueEmpty.selector);
         vm.prank(keeper);
-        manager.queuePosition(stakeId);
+        manager.queuePosition();
         _assertAccounting();
     }
 
@@ -138,21 +139,21 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _assertAccounting();
     }
 
-    function testQueuePositionRevertsForClaimedStake() external {
+    function testQueuePositionRevertsWhenOnlyClaimedStakesRemain() external {
         uint256 stakeId = _create(1000 ether);
         _queue(stakeId);
         vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
         _claim(stakeId);
-        vm.expectRevert(RailStakePositionManager.InvalidPositionStatus.selector);
+        vm.expectRevert(DoubleEndedQueue.QueueEmpty.selector);
         vm.prank(keeper);
-        manager.queuePosition(stakeId);
+        manager.queuePosition();
         _assertAccounting();
     }
 
-    function testQueuePositionRevertsForUnknownStake() external {
-        vm.expectRevert();
+    function testQueuePositionRevertsForEmptyQueue() external {
+        vm.expectRevert(DoubleEndedQueue.QueueEmpty.selector);
         vm.prank(keeper);
-        manager.queuePosition(0);
+        manager.queuePosition();
         _assertAccounting();
     }
 
@@ -285,7 +286,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
         manager.pause();
         vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
         vm.prank(keeper);
-        manager.queuePosition(0);
+        manager.queuePosition();
         _assertAccounting();
     }
 
@@ -312,9 +313,9 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _expectRole(outsider, manager.CREATOR_ROLE());
         manager.createPosition(1 ether);
         _expectRole(claimer, manager.QUEUER_ROLE());
-        manager.queuePosition(0);
+        manager.queuePosition();
         _expectRole(keeper, manager.QUEUER_ROLE());
-        manager.queuePosition(0);
+        manager.queuePosition();
         _expectRole(queuer, manager.CLAIMER_ROLE());
         manager.claimPosition(0, receiver);
         _expectRole(queuer, manager.CLAIMER_ROLE());
@@ -328,7 +329,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
         manager.grantRole(creatorRole, outsider);
 
         vm.prank(queuer);
-        manager.queuePosition(0);
+        manager.queuePosition();
         vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
         _expectRole(keeper, manager.CLAIMER_ROLE());
         manager.claimPosition(0, receiver);
@@ -428,9 +429,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
             _assertAccounting();
         }
         for (uint256 i = 0; i < count; i++) {
-            uint256[] memory active = manager.activeStakeIdsList();
-            uint256 index = uint256(keccak256(abi.encode(seed, i, "queue"))) % active.length;
-            _queue(active[index]);
+            _queue(manager.activeStakeHead());
             vm.warp(block.timestamp + 1 hours);
             _assertAccounting();
         }
@@ -547,41 +546,42 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _assertAccounting();
     }
 
-    function testQueuePositionRemovesMiddleAndPreservesOrder() external {
+    function testQueuePositionAlwaysConsumesOldest() external {
         _create(1000 ether);
         _create(2000 ether);
         _create(3000 ether);
-        _queue(1);
-        assertEq(manager.activeStakeIdsList(), _pair(0, 2));
-        assertEq(manager.activePrincipal(), 4000 ether);
-        assertEq(manager.queuedPrincipal(), 2000 ether);
-        _assertAccounting();
-        vm.expectRevert(RailStakePositionManager.InvalidPositionStatus.selector);
-        vm.prank(keeper);
-        manager.queuePosition(1);
-        _assertAccounting();
-        _queue(0);
-        _assertAccounting();
+        for (uint256 id = 0; id < 3; id++) {
+            _queue(id);
+            _assertAccounting();
+        }
+        assertEq(manager.activePrincipal(), 0);
+        assertEq(manager.queuedPrincipal(), 6000 ether);
     }
 
-    function testQueuePositionRemovesTailThenAppends() external {
+    function testQueuePositionPreservesOrderWhenNewStakesAppend() external {
         _create(1000 ether);
         _create(2000 ether);
         _create(3000 ether);
-        _queue(2);
-        assertEq(manager.activeStakeTail(), 1);
-        assertEq(manager.nextActiveStakeId(1), manager.NO_STAKE_ID());
+        _queue(0);
+        assertEq(manager.activeStakeHead(), 1);
+        assertEq(manager.activeStakeTail(), 2);
         _assertAccounting();
         uint256 id = _create(4000 ether);
-        assertEq(manager.nextActiveStakeId(1), id);
         assertEq(manager.activeStakeTail(), id);
         _assertAccounting();
         _queue(1);
         _assertAccounting();
+        _queue(2);
+        _assertAccounting();
         _queue(id);
         _assertAccounting();
-        _queue(0);
-        _assertAccounting();
+    }
+
+    function testActiveStakeHeadAndTailRevertWhenEmpty() external {
+        vm.expectRevert(DoubleEndedQueue.QueueEmpty.selector);
+        manager.activeStakeHead();
+        vm.expectRevert(DoubleEndedQueue.QueueEmpty.selector);
+        manager.activeStakeTail();
     }
 
     function testActiveListCanDrainAndRefillWhileClaimsRemainQueued() external {
@@ -592,14 +592,14 @@ contract RailStakePositionManagerIntegrationTest is Test {
             assertEq(manager.activeStakeTail(), first);
             _assertAccounting();
             uint256 second = _create(2000 ether);
-            assertEq(manager.nextActiveStakeId(first), second);
+            assertEq(manager.activeStakeIdsList(), _pair(first, second));
             _assertAccounting();
             _queue(first);
             assertEq(manager.activeStakeHead(), second);
             _assertAccounting();
             _queue(second);
-            assertEq(manager.activeStakeHead(), manager.NO_STAKE_ID());
-            assertEq(manager.activeStakeTail(), manager.NO_STAKE_ID());
+            assertEq(manager.activePositionCount(), 0);
+            assertEq(manager.activeStakeIdsList().length, 0);
             _assertAccounting();
         }
         vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
@@ -641,9 +641,9 @@ contract RailStakePositionManagerIntegrationTest is Test {
     }
 
     function testQueuePositionRequiresQueuerRole() external {
-        uint256 id = _create(1000 ether);
+        _create(1000 ether);
         _expectRole(strategy, manager.QUEUER_ROLE());
-        manager.queuePosition(id);
+        manager.queuePosition();
         _assertAccounting();
     }
 
@@ -688,15 +688,14 @@ contract RailStakePositionManagerIntegrationTest is Test {
 
     function _queue(uint256 id) internal {
         uint256[] memory beforeIds = manager.activeStakeIdsList();
+        assertEq(manager.activeStakeHead(), id);
         vm.prank(keeper);
-        assertEq(manager.queuePosition(id), expectedAmounts[id]);
+        assertEq(manager.queuePosition(), expectedAmounts[id]);
         uint256[] memory afterIds = manager.activeStakeIdsList();
         assertEq(afterIds.length, beforeIds.length - 1);
-        uint256 index;
-        for (uint256 i = 0; i < beforeIds.length; i++) {
-            if (beforeIds[i] != id) assertEq(afterIds[index++], beforeIds[i]);
+        for (uint256 i = 0; i < afterIds.length; i++) {
+            assertEq(afterIds[i], beforeIds[i + 1]);
         }
-        assertEq(manager.nextActiveStakeId(id), 0, "removed link not cleared");
         (,,, uint256 locktime, uint256 claimedTime) = staking.stakes(address(manager), id);
         assertEq(locktime, block.timestamp + staking.STAKE_LOCKTIME());
         assertEq(claimedTime, 0);
@@ -742,21 +741,16 @@ contract RailStakePositionManagerIntegrationTest is Test {
         uint256[] memory ids = manager.activeStakeIdsList();
         bool[] memory seen = new bool[](count);
         assertEq(ids.length, manager.activePositionCount());
-        uint256 cursor = manager.activeStakeHead();
-        if (ids.length == 0) {
-            assertEq(manager.activeStakeTail(), manager.NO_STAKE_ID());
-        } else {
+        if (ids.length != 0) {
+            assertEq(manager.activeStakeHead(), ids[0]);
             assertEq(manager.activeStakeTail(), ids[ids.length - 1]);
         }
         for (uint256 i = 0; i < ids.length; i++) {
-            assertEq(cursor, ids[i], "list traversal mismatch");
             if (i != 0) assertGt(ids[i], ids[i - 1], "not oldest first");
             assertLt(ids[i], count);
             assertFalse(seen[ids[i]], "duplicate active ID");
             seen[ids[i]] = true;
-            cursor = manager.nextActiveStakeId(cursor);
         }
-        assertEq(cursor, manager.NO_STAKE_ID(), "list does not terminate");
         for (uint256 i = 0; i < count; i++) {
             (address delegate, uint256 amount, uint256 staketime, uint256 locktime, uint256 claimedTime) =
                 staking.stakes(address(manager), i);
