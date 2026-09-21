@@ -15,6 +15,7 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
 import {StakedRailProcessor} from "../../src/processors/StakedRailProcessor.sol";
+import {QueuedRailProcessor} from "../../src/processors/QueuedRailProcessor.sol";
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
@@ -35,6 +36,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     WithdrawalRequest internal requests;
     BaseWithdrawer internal withdrawer;
     RailWithdrawalResolver internal resolver;
+    QueuedRailProcessor internal queuedRailProcessor;
     StakedRailProcessor internal processor;
 
     function setUp() external {
@@ -131,11 +133,14 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         processor =
             new StakedRailProcessor(address(this), strategy, 1000 ether);
 
+        queuedRailProcessor = new QueuedRailProcessor(address(this), qRail);
+        queuedRailProcessor.grantRole(queuedRailProcessor.KEEPER_ROLE(), address(this));
+
         manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
         qRail.setStakedRail(address(strategy));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(processor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
-        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
+        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(queuedRailProcessor));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules();
         manager.grantRole(manager.CLAIMER_ROLE(), address(qRail));
@@ -179,7 +184,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         stakeIds[0] = 0;
         stakeIds[1] = 1;
         vm.warp(block.timestamp + 30 days + 1);
-        assertEq(resolver.claimMaturedPositions(stakeIds), 2000 ether);
+        assertEq(queuedRailProcessor.claimMaturedPositions(stakeIds), 2000 ether);
         assertEq(rail.balanceOf(address(qRail)), 2000 ether);
 
         assertEq(resolver.resolveRequests(1), 1);
@@ -231,7 +236,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         uint256[] memory ids = new uint256[](2);
         ids[0] = 0;
         ids[1] = 1;
-        resolver.claimMaturedPositions(ids);
+        queuedRailProcessor.claimMaturedPositions(ids);
         for (uint256 id = first; id <= second; id++) {
             uint256 locked = requests.requests(id).amountLocked;
             uint256 assets = qRail.previewRedeem(locked);

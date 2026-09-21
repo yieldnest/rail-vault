@@ -12,7 +12,8 @@ Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 - `src/processors/StakedRailProcessor.sol`: permissionless chunked staking and qRAIL exits through stRAIL's processor.
 - `src/railgun/RailStakePositionManager.sol`: records RAILGUN stake IDs, tracks active/queued principal, queues full positions, and claims matured stakes.
 - `lib/yieldnest-vault-withdrawals/src/withdrawers/BaseWithdrawer.sol`: existing YieldNest adapter plugged directly into `WithdrawalRequest` for qRAIL redemptions.
-- `src/withdrawals/RailWithdrawalResolver.sol`: FIFO resolver/keeper helper for claiming matured RAIL and resolving qRAIL withdrawal requests.
+- `src/processors/QueuedRailProcessor.sol`: claims matured RAIL into qRAIL through its processor.
+- `src/withdrawals/RailWithdrawalResolver.sol`: FIFO settlement of qRAIL withdrawal requests.
 - `script/DeployStakedRail.s.sol`: proxy deployment and role wiring.
 
 ## Commands

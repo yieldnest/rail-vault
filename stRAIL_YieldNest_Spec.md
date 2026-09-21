@@ -443,25 +443,22 @@ WithdrawalRequest.RESOLVER_ROLE -> RailWithdrawalResolver
 Responsibilities:
 
 -   enforce request ordering;
--   determine aggregate withdrawal demand;
--   allocate qRAIL;
--   trigger unstaking;
--   claim matured positions;
--   resolve requests into RAIL;
--   enforce cancellation policy.
+-   resolve locked qRAIL shares into RAIL at the live redemption rate;
+-   retain partially settled requests at the head until fully resolved.
 
-V1 should use **strict FIFO and full fills**.
+Settlement uses **strict FIFO with partial fills**.
 
 ``` text
 request N+1 must not consume liquidity
 required to fully satisfy unresolved request N
 ```
 
-Bound keeper work with separate calls:
+Bound keeper work with separate calls on separate contracts:
 
 ``` solidity
-function allocateRequests(uint256 maxRequests) external;
+// QueuedRailProcessor
 function claimMaturedPositions(uint256[] calldata stakeIds) external;
+// RailWithdrawalResolver
 function resolveRequests(uint256 maxRequests) external;
 ```
 
@@ -482,8 +479,8 @@ for qRAIL, which the user can submit to the withdrawal queue.
 
 Excess qRAIL from whole-position exits remains in stRAIL for later exits.
 No separate exit rebalancing is needed: withdrawal requests already hold
-backed qRAIL. The resolver only claims matured positions into qRAIL and
-resolves requests in FIFO order as RAIL becomes available.
+backed qRAIL. `QueuedRailProcessor` claims matured positions into qRAIL;
+the resolver settles requests in FIFO order as RAIL becomes available.
 
 ## Rewards
 
@@ -542,7 +539,7 @@ stRAIL:
 
 qRAIL:
   DEFAULT_ADMIN_ROLE
-  PROCESSOR_ROLE -> RailWithdrawalResolver
+  PROCESSOR_ROLE -> QueuedRailProcessor
   mintQueuedRail -> only stakedRail (set once)
 
 WithdrawalRequest:
@@ -553,7 +550,10 @@ WithdrawalRequest:
 The resolver module, rather than a normal keeper EOA, should hold
 settlement authority.
 
-The resolver claims matured stakes through qRAIL's processor. Only qRAIL
+`QueuedRailProcessor` claims matured stakes through qRAIL's processor.
+Both it and the resolver gate their respective operations with their own
+`KEEPER_ROLE`. The processor has no request-resolution authority, and the
+resolver has no qRAIL processor authority. Only qRAIL
 receives the manager's `CLAIMER_ROLE` in deployment. Processor rules allow
 single and batch claim calls to the manager and restrict the receiver to
 qRAIL itself. Governance can manage these rules and role grants.

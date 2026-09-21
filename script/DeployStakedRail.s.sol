@@ -15,6 +15,7 @@ import {QueuedRailStrategy} from "../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../src/StakedRailStrategy.sol";
 import {RailRewardsProcessor} from "../src/processors/RailRewardsProcessor.sol";
 import {StakedRailProcessor} from "../src/processors/StakedRailProcessor.sol";
+import {QueuedRailProcessor} from "../src/processors/QueuedRailProcessor.sol";
 import {IRailgunGovernorRewards} from "../src/railgun/IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../src/railgun/RailStakePositionManager.sol";
@@ -41,6 +42,7 @@ contract DeployStakedRail is Script {
         BaseWithdrawer withdrawer;
         RailWithdrawalResolver resolver;
         StakedRailProcessor processor;
+        QueuedRailProcessor queuedRailProcessor;
         RailRewardsProcessor rewardsProcessor;
     }
 
@@ -78,6 +80,7 @@ contract DeployStakedRail is Script {
         vm.serializeAddress(json, "withdrawer", address(deployed.withdrawer));
         vm.serializeAddress(json, "resolver", address(deployed.resolver));
         vm.serializeAddress(json, "processor", address(deployed.processor));
+        vm.serializeAddress(json, "queuedRailProcessor", address(deployed.queuedRailProcessor));
         vm.serializeAddress(json, "rewardsProcessor", address(deployed.rewardsProcessor));
         string memory output = vm.serializeAddress(json, "strategy", address(deployed.strategy));
         vm.writeJson(output, string.concat("deployments/staked-rail-", vm.toString(block.chainid), ".json"));
@@ -186,6 +189,7 @@ contract DeployStakedRail is Script {
             deployed.strategy,
             config.stakeChunkSize
         );
+        deployed.queuedRailProcessor = new QueuedRailProcessor(config.admin, deployed.qRail);
         deployed.rewardsProcessor = new RailRewardsProcessor(
             config.admin,
             IRailgunGovernorRewards(config.governorRewards),
@@ -201,7 +205,8 @@ contract DeployStakedRail is Script {
         deployed.qRail.setStakedRail(address(deployed.strategy));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.processor));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_MANAGER_ROLE(), config.admin);
-        deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.resolver));
+        deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.queuedRailProcessor));
+        deployed.queuedRailProcessor.grantRole(deployed.queuedRailProcessor.KEEPER_ROLE(), config.admin);
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_MANAGER_ROLE(), config.admin);
         _setProcessorRules(config, deployed);
         deployed.manager.grantRole(deployed.manager.CLAIMER_ROLE(), address(deployed.qRail));
