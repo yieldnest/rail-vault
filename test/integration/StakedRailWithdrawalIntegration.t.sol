@@ -14,8 +14,7 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 
 import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
-import {StakedRailExitProcessor} from "../../src/processors/StakedRailExitProcessor.sol";
-import {StakedRailStakingProcessor} from "../../src/processors/StakedRailStakingProcessor.sol";
+import {StakedRailProcessor} from "../../src/processors/StakedRailProcessor.sol";
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
@@ -36,8 +35,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     WithdrawalRequest internal requests;
     BaseWithdrawer internal withdrawer;
     RailWithdrawalResolver internal resolver;
-    StakedRailStakingProcessor internal stakingProcessor;
-    StakedRailExitProcessor internal exitProcessor;
+    StakedRailProcessor internal processor;
 
     function setUp() external {
         staking = IRailgunStaking(RAILGUN_STAKING);
@@ -130,14 +128,12 @@ contract StakedRailWithdrawalIntegrationTest is Test {
 
         resolver =
             new RailWithdrawalResolver(address(this), qRail, requests);
-        stakingProcessor =
-            new StakedRailStakingProcessor(address(this), strategy, 1000 ether);
-        exitProcessor = new StakedRailExitProcessor(strategy);
+        processor =
+            new StakedRailProcessor(address(this), strategy, 1000 ether);
 
         manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
         qRail.setStakedRail(address(strategy));
-        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
-        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
+        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(processor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
@@ -159,13 +155,13 @@ contract StakedRailWithdrawalIntegrationTest is Test {
 
         _deposit(alice, 5000 ether);
 
-        assertEq(stakingProcessor.rebalanceStaking(10), 5);
+        assertEq(processor.rebalanceStaking(10), 5);
         assertEq(manager.activePrincipal(), 5000 ether);
         assertEq(rail.balanceOf(address(strategy)), 0);
 
         vm.startPrank(alice);
-        strategy.approve(address(exitProcessor), 1500 ether);
-        uint256 qRailAmount = exitProcessor.exitToQueuedRail(1500 ether, alice, 2);
+        strategy.approve(address(processor), 1500 ether);
+        uint256 qRailAmount = processor.exitToQueuedRail(1500 ether, alice, 2);
         qRail.approve(address(requests), qRailAmount);
         uint256 requestId = requests.requestWithdrawal(qRailAmount, alice, "integration");
         requests.transferFrom(alice, bob, requestId);

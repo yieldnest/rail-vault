@@ -14,8 +14,7 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 import {QueuedRailStrategy} from "../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../src/StakedRailStrategy.sol";
 import {RailRewardsProcessor} from "../src/processors/RailRewardsProcessor.sol";
-import {StakedRailExitProcessor} from "../src/processors/StakedRailExitProcessor.sol";
-import {StakedRailStakingProcessor} from "../src/processors/StakedRailStakingProcessor.sol";
+import {StakedRailProcessor} from "../src/processors/StakedRailProcessor.sol";
 import {IRailgunGovernorRewards} from "../src/railgun/IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../src/railgun/RailStakePositionManager.sol";
@@ -41,8 +40,7 @@ contract DeployStakedRail is Script {
         WithdrawalRequest withdrawalRequest;
         BaseWithdrawer withdrawer;
         RailWithdrawalResolver resolver;
-        StakedRailStakingProcessor stakingProcessor;
-        StakedRailExitProcessor exitProcessor;
+        StakedRailProcessor processor;
         RailRewardsProcessor rewardsProcessor;
     }
 
@@ -79,8 +77,7 @@ contract DeployStakedRail is Script {
         vm.serializeAddress(json, "withdrawalRequest", address(deployed.withdrawalRequest));
         vm.serializeAddress(json, "withdrawer", address(deployed.withdrawer));
         vm.serializeAddress(json, "resolver", address(deployed.resolver));
-        vm.serializeAddress(json, "stakingProcessor", address(deployed.stakingProcessor));
-        vm.serializeAddress(json, "exitProcessor", address(deployed.exitProcessor));
+        vm.serializeAddress(json, "processor", address(deployed.processor));
         vm.serializeAddress(json, "rewardsProcessor", address(deployed.rewardsProcessor));
         string memory output = vm.serializeAddress(json, "strategy", address(deployed.strategy));
         vm.writeJson(output, string.concat("deployments/staked-rail-", vm.toString(block.chainid), ".json"));
@@ -184,13 +181,11 @@ contract DeployStakedRail is Script {
                 deployed.withdrawalRequest
             );
 
-        deployed.stakingProcessor = new StakedRailStakingProcessor(
+        deployed.processor = new StakedRailProcessor(
             config.admin,
             deployed.strategy,
             config.stakeChunkSize
         );
-        deployed.exitProcessor =
-            new StakedRailExitProcessor(deployed.strategy);
         deployed.rewardsProcessor = new RailRewardsProcessor(
             config.admin,
             IRailgunGovernorRewards(config.governorRewards),
@@ -203,8 +198,7 @@ contract DeployStakedRail is Script {
     function _wire(Config memory config, Deployed memory deployed) private {
         deployed.manager.grantRole(deployed.manager.CREATOR_ROLE(), address(deployed.strategy));
         deployed.qRail.setStakedRail(address(deployed.strategy));
-        deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.stakingProcessor));
-        deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.exitProcessor));
+        deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.processor));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_MANAGER_ROLE(), config.admin);
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.resolver));
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_MANAGER_ROLE(), config.admin);

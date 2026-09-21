@@ -9,8 +9,7 @@ Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 - `lib/yieldnest-vault-withdrawals`: YieldNest withdrawal request, Bag, factory, policy, and withdrawer interfaces.
 - `src/StakedRailStrategy.sol`: YieldNest `BaseStrategy` vault for stRAIL, with RAIL as the base asset and synchronous exits disabled.
 - `src/QueuedRailStrategy.sol`: non-depositable YieldNest `BaseStrategy` qRAIL token used by the withdrawal system.
-- `src/processors/StakedRailStakingProcessor.sol`: keeper-facing staking processor that calls stRAIL `processor`.
-- `src/processors/StakedRailExitProcessor.sol`: user-facing exit processor that burns stRAIL and mints qRAIL through vault processors.
+- `src/processors/StakedRailProcessor.sol`: permissionless chunked staking and qRAIL exits through stRAIL's processor.
 - `src/railgun/RailStakePositionManager.sol`: records RAILGUN stake IDs, tracks active/queued principal, queues full positions, and claims matured stakes.
 - `lib/yieldnest-vault-withdrawals/src/withdrawers/BaseWithdrawer.sol`: existing YieldNest adapter plugged directly into `WithdrawalRequest` for qRAIL redemptions.
 - `src/withdrawals/RailWithdrawalResolver.sol`: FIFO resolver/keeper helper for claiming matured RAIL and resolving qRAIL withdrawal requests.

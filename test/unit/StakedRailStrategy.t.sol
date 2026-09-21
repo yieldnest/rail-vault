@@ -14,8 +14,7 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 
 import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
-import {StakedRailExitProcessor} from "../../src/processors/StakedRailExitProcessor.sol";
-import {StakedRailStakingProcessor} from "../../src/processors/StakedRailStakingProcessor.sol";
+import {StakedRailProcessor} from "../../src/processors/StakedRailProcessor.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
 import {RailWithdrawalResolver} from "../../src/withdrawals/RailWithdrawalResolver.sol";
@@ -34,8 +33,7 @@ contract StakedRailStrategyTest is Test {
     WithdrawalRequest requests;
     BaseWithdrawer withdrawer;
     RailWithdrawalResolver resolver;
-    StakedRailStakingProcessor stakingProcessor;
-    StakedRailExitProcessor exitProcessor;
+    StakedRailProcessor processor;
 
     function setUp() external {
         rail = new MockERC20("RAIL", "RAIL", 18);
@@ -128,14 +126,12 @@ contract StakedRailStrategyTest is Test {
 
         resolver =
             new RailWithdrawalResolver(address(this), qRail, requests);
-        stakingProcessor =
-            new StakedRailStakingProcessor(address(this), strategy, 1000 ether);
-        exitProcessor = new StakedRailExitProcessor(strategy);
+        processor =
+            new StakedRailProcessor(address(this), strategy, 1000 ether);
 
         manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
         qRail.setStakedRail(address(strategy));
-        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(stakingProcessor));
-        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(exitProcessor));
+        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(processor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(resolver));
         qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
@@ -156,26 +152,26 @@ contract StakedRailStrategyTest is Test {
         qRail.mintQueuedRail(user, 1000 ether);
 
         vm.expectRevert(QueuedRailStrategy.OnlyStakedRail.selector);
-        vm.prank(address(exitProcessor));
+        vm.prank(address(processor));
         qRail.mintQueuedRail(user, 1000 ether);
         assertEq(qRail.totalSupply(), 0);
     }
 
     function testQueuePositionRejectsDirectCalls() external {
         vm.expectRevert(StakedRailStrategy.OnlyProcessorSelfCall.selector);
-        vm.prank(address(exitProcessor));
+        vm.prank(address(processor));
         strategy.queuePosition();
 
         vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(exitProcessor), manager.QUEUER_ROLE()
+            "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), manager.QUEUER_ROLE()
         ));
-        vm.prank(address(exitProcessor));
+        vm.prank(address(processor));
         manager.queuePosition();
     }
 
     function testQueuePositionAtomicallyMintsBacking() external {
         _deposit(user, 1000 ether);
-        stakingProcessor.rebalanceStaking(1);
+        processor.rebalanceStaking(1);
         _queueThroughStrategy();
 
         assertEq(manager.activePrincipal(), 0);
@@ -187,7 +183,7 @@ contract StakedRailStrategyTest is Test {
 
     function testQueuePositionRollsBackWhenMintFails() external {
         _deposit(user, 1000 ether);
-        stakingProcessor.rebalanceStaking(1);
+        processor.rebalanceStaking(1);
         vm.mockCallRevert(
             address(qRail),
             abi.encodeCall(QueuedRailStrategy.mintQueuedRail, (address(strategy), 1000 ether)),
@@ -210,7 +206,7 @@ contract StakedRailStrategyTest is Test {
         bytes[] memory data = new bytes[](1);
         targets[0] = address(strategy);
         data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, ());
-        vm.prank(address(exitProcessor));
+        vm.prank(address(processor));
         strategy.processor(targets, values, data);
     }
 
@@ -231,7 +227,7 @@ contract StakedRailStrategyTest is Test {
 
     function testManagerQueueAndClaimRolesAreSeparate() external {
         _deposit(user, 1000 ether);
-        stakingProcessor.rebalanceStaking(1);
+        processor.rebalanceStaking(1);
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), manager.QUEUER_ROLE()
@@ -244,17 +240,17 @@ contract StakedRailStrategyTest is Test {
         vm.warp(block.timestamp + 30 days + 1);
 
         vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(exitProcessor), manager.CLAIMER_ROLE()
+            "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), manager.CLAIMER_ROLE()
         ));
-        vm.prank(address(exitProcessor));
+        vm.prank(address(processor));
         manager.claimPosition(0, address(qRail));
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = 0;
         vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(exitProcessor), manager.CLAIMER_ROLE()
+            "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), manager.CLAIMER_ROLE()
         ));
-        vm.prank(address(exitProcessor));
+        vm.prank(address(processor));
         manager.claimMaturedPositions(ids, address(qRail));
 
         manager.grantRole(manager.KEEPER_ROLE(), user);
@@ -275,7 +271,7 @@ contract StakedRailStrategyTest is Test {
 
     function testClaimRulesRestrictReceiverToQueuedRail() external {
         _deposit(user, 1000 ether);
-        stakingProcessor.rebalanceStaking(1);
+        processor.rebalanceStaking(1);
         _queueThroughStrategy();
         vm.warp(block.timestamp + 30 days + 1);
 
@@ -342,16 +338,36 @@ contract StakedRailStrategyTest is Test {
     }
 
     function testProcessorsDeriveDependenciesFromVaults() external view {
-        assertEq(address(exitProcessor.qRail()), address(strategy.queuedRail()));
-        assertEq(address(exitProcessor.positionManager()), address(strategy.positionManager()));
-        assertEq(address(stakingProcessor.positionManager()), address(strategy.positionManager()));
+        assertEq(address(processor.qRail()), address(strategy.queuedRail()));
+        assertEq(address(processor.positionManager()), address(strategy.positionManager()));
         assertEq(address(resolver.positionManager()), address(qRail.positionManager()));
+    }
+
+    function testProcessorRoleRevocationBlocksStakingAndQueueing() external {
+        _deposit(user, 2000 ether);
+        processor.rebalanceStaking(1);
+        bytes32 role = strategy.PROCESSOR_ROLE();
+        strategy.revokeRole(role, address(processor));
+        bytes memory expected = abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), role
+        );
+        vm.expectRevert(expected);
+        processor.rebalanceStaking(1);
+        vm.prank(user);
+        strategy.approve(address(processor), 1000 ether);
+        vm.expectRevert(expected);
+        vm.prank(user);
+        processor.exitToQueuedRail(1000 ether, user, 1);
+        assertEq(manager.activePrincipal(), 1000 ether);
+        assertEq(manager.queuedPrincipal(), 0);
+        assertEq(qRail.totalSupply(), 0);
+        assertEq(strategy.balanceOf(user), 2000 ether);
     }
 
     function testDepositAndChunkedStakingAccounting() external {
         _deposit(user, 5000 ether);
 
-        uint256 operations = stakingProcessor.rebalanceStaking(10);
+        uint256 operations = processor.rebalanceStaking(10);
 
         assertEq(operations, 5);
         assertEq(rail.balanceOf(address(strategy)), 0);
@@ -364,15 +380,15 @@ contract StakedRailStrategyTest is Test {
 
     function testExitsPopOldestWithoutReadingFullList() external {
         _deposit(user, 5000 ether);
-        stakingProcessor.rebalanceStaking(5);
+        processor.rebalanceStaking(5);
         vm.mockCallRevert(
             address(manager), abi.encodeCall(RailStakePositionManager.activeStakeIdsList, ()), "no eager list reads"
         );
         vm.startPrank(user);
-        strategy.approve(address(exitProcessor), 3000 ether);
-        exitProcessor.exitToQueuedRail(1000 ether, user, 1);
+        strategy.approve(address(processor), 3000 ether);
+        processor.exitToQueuedRail(1000 ether, user, 1);
         assertEq(manager.activeStakeHead(), 1);
-        exitProcessor.exitToQueuedRail(2000 ether, user, 2);
+        processor.exitToQueuedRail(2000 ether, user, 2);
         vm.stopPrank();
         assertEq(manager.activeStakeHead(), 3);
         assertEq(manager.activeStakeTail(), 4);
@@ -388,13 +404,13 @@ contract StakedRailStrategyTest is Test {
 
     function testExitPositionLimitRollsBackQueueAndMinting() external {
         _deposit(user, 3000 ether);
-        stakingProcessor.rebalanceStaking(3);
+        processor.rebalanceStaking(3);
         vm.startPrank(user);
-        strategy.approve(address(exitProcessor), 2000 ether);
+        strategy.approve(address(processor), 2000 ether);
         vm.expectRevert(
-            abi.encodeWithSelector(StakedRailExitProcessor.InsufficientQueuedRail.selector, 2000 ether, 1000 ether)
+            abi.encodeWithSelector(StakedRailProcessor.InsufficientQueuedRail.selector, 2000 ether, 1000 ether)
         );
-        exitProcessor.exitToQueuedRail(2000 ether, user, 1);
+        processor.exitToQueuedRail(2000 ether, user, 1);
         vm.stopPrank();
         assertEq(manager.activeStakeHead(), 0);
         assertEq(manager.activeStakeTail(), 2);
@@ -410,12 +426,12 @@ contract StakedRailStrategyTest is Test {
     function testStakingLeavesRemainderAndHonorsOperationLimit() external {
         _deposit(user, 2500 ether);
         vm.prank(user);
-        assertEq(stakingProcessor.rebalanceStaking(1), 1);
+        assertEq(processor.rebalanceStaking(1), 1);
         assertEq(manager.activePrincipal(), 1000 ether);
         assertEq(rail.balanceOf(address(strategy)), 1500 ether);
 
-        assertEq(stakingProcessor.rebalanceStaking(10), 1);
-        assertEq(stakingProcessor.rebalanceStaking(10), 0);
+        assertEq(processor.rebalanceStaking(10), 1);
+        assertEq(processor.rebalanceStaking(10), 0);
         assertEq(manager.activePrincipal(), 2000 ether);
         assertEq(rail.balanceOf(address(strategy)), 500 ether);
         uint256[] memory ids = manager.activeStakeIdsList();
@@ -427,9 +443,9 @@ contract StakedRailStrategyTest is Test {
 
     function testChunkSizeChangeAppliesToNewStakes() external {
         _deposit(user, 5500 ether);
-        assertEq(stakingProcessor.rebalanceStaking(1), 1);
-        stakingProcessor.setStakeChunkSize(2000 ether);
-        assertEq(stakingProcessor.rebalanceStaking(10), 2);
+        assertEq(processor.rebalanceStaking(1), 1);
+        processor.setStakeChunkSize(2000 ether);
+        assertEq(processor.rebalanceStaking(10), 2);
         uint256[] memory ids = manager.activeStakeIdsList();
         for (uint256 i = 0; i < ids.length; i++) {
             (, uint256 principal,,,) = staking.stakes(address(manager), ids[i]);
@@ -439,25 +455,25 @@ contract StakedRailStrategyTest is Test {
     }
 
     function testChunkSizeRequiresConfigRoleAndNonzeroValue() external {
-        bytes32 role = stakingProcessor.CONFIG_MANAGER_ROLE();
+        bytes32 role = processor.CONFIG_MANAGER_ROLE();
         vm.expectRevert(abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, role));
         vm.prank(user);
-        stakingProcessor.setStakeChunkSize(2000 ether);
+        processor.setStakeChunkSize(2000 ether);
 
-        vm.expectRevert(StakedRailStakingProcessor.InvalidStakeChunkSize.selector);
-        stakingProcessor.setStakeChunkSize(0);
+        vm.expectRevert(StakedRailProcessor.InvalidStakeChunkSize.selector);
+        processor.setStakeChunkSize(0);
 
-        vm.expectRevert(StakedRailStakingProcessor.InvalidStakeChunkSize.selector);
-        new StakedRailStakingProcessor(address(this), strategy, 0);
+        vm.expectRevert(StakedRailProcessor.InvalidStakeChunkSize.selector);
+        new StakedRailProcessor(address(this), strategy, 0);
     }
 
     function testQueuedRailUsesExistingWithdrawalRequestLifecycle() external {
         _deposit(user, 5000 ether);
-        stakingProcessor.rebalanceStaking(10);
+        processor.rebalanceStaking(10);
 
         vm.startPrank(user);
-        strategy.approve(address(exitProcessor), 1500 ether);
-        exitProcessor.exitToQueuedRail(1500 ether, user, 2);
+        strategy.approve(address(processor), 1500 ether);
+        processor.exitToQueuedRail(1500 ether, user, 2);
         qRail.approve(address(requests), 1500 ether);
         uint256 requestId = requests.requestWithdrawal(1500 ether, user, "");
         vm.stopPrank();

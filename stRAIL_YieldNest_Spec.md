@@ -292,7 +292,7 @@ function queuePosition()
     returns (uint256 qRailMinted);
 ```
 
-The manager's `QUEUER_ROLE` belongs to stRAIL. The exit processor invokes
+The manager's `QUEUER_ROLE` belongs to stRAIL. `StakedRailProcessor` invokes
 `StakedRailStrategy.queuePosition()` through stRAIL's processor;
 this instruction is restricted to an allowlisted processor self-call.
 
@@ -476,7 +476,7 @@ function rebalanceStaking(uint256 maxOperations)
 It creates full stake chunks and leaves only a sub-chunk remainder when
 the operation limit permits staking all available chunks.
 
-The exit processor invokes stRAIL's atomic queue-and-mint instruction for
+`StakedRailProcessor` invokes stRAIL's atomic queue-and-mint instruction for
 complete stake positions. It then redeems the user's stRAIL shares
 for qRAIL, which the user can submit to the withdrawal queue.
 
@@ -538,7 +538,7 @@ RailStakePositionManager:
   PAUSER_ROLE
 
 stRAIL:
-  PROCESSOR_ROLE -> staking processor and exit processor
+  PROCESSOR_ROLE -> StakedRailProcessor (staking and exits)
 
 qRAIL:
   DEFAULT_ADMIN_ROLE
