@@ -181,18 +181,16 @@ contract DeployStakedRail is Script {
             new RailWithdrawalResolver(
                 config.admin,
                 deployed.qRail,
-                deployed.manager,
                 deployed.withdrawalRequest
             );
 
         deployed.stakingProcessor = new StakedRailStakingProcessor(
             config.admin,
             deployed.strategy,
-            deployed.manager,
             config.stakeChunkSize
         );
         deployed.exitProcessor =
-            new StakedRailExitProcessor(deployed.strategy, deployed.qRail, deployed.manager);
+            new StakedRailExitProcessor(deployed.strategy);
         deployed.rewardsProcessor = new RailRewardsProcessor(
             config.admin,
             IRailgunGovernorRewards(config.governorRewards),

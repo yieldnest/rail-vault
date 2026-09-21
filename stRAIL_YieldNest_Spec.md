@@ -108,7 +108,6 @@ StakedRailStrategy
 QueuedRail (qRAIL)
 RailStakePositionManager
 RailWithdrawalResolver
-StakedRailViewer
 ```
 
 Recommended layout:
@@ -122,9 +121,7 @@ src/
 │   └── RailStakePositionManager.sol
 ├── withdrawals/
 │   └── RailWithdrawalResolver.sol
-├── interface/
-└── views/
-    └── StakedRailViewer.sol
+└── interface/
 ```
 
 ## StakedRailStrategy
@@ -694,7 +691,6 @@ QueuedRail
 IRailgunStaking
 RailStakePositionManager
 RailWithdrawalResolver
-StakedRailViewer
 deployment scripts
 mainnet-fork tests
 ```

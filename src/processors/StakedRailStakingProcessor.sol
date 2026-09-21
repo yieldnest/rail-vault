@@ -19,11 +19,10 @@ contract StakedRailStakingProcessor is AccessControl {
     constructor(
         address admin,
         StakedRailStrategy stRailAddress,
-        RailStakePositionManager positionManagerAddress,
         uint256 stakeChunkSizeValue
     ) {
         stRail = stRailAddress;
-        positionManager = positionManagerAddress;
+        positionManager = stRailAddress.positionManager();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(CONFIG_MANAGER_ROLE, admin);
         _setStakeChunkSize(stakeChunkSizeValue);

@@ -22,11 +22,10 @@ contract RailWithdrawalResolver is AccessControl {
     constructor(
         address admin,
         QueuedRailStrategy qRailAddress,
-        RailStakePositionManager positionManagerAddress,
         WithdrawalRequest withdrawalRequestAddress
     ) {
         qRail = qRailAddress;
-        positionManager = positionManagerAddress;
+        positionManager = qRailAddress.positionManager();
         withdrawalRequest = withdrawalRequestAddress;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }

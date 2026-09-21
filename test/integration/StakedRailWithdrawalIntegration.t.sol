@@ -129,10 +129,10 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         );
 
         resolver =
-            new RailWithdrawalResolver(address(this), qRail, manager, requests);
+            new RailWithdrawalResolver(address(this), qRail, requests);
         stakingProcessor =
-            new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether);
-        exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
+            new StakedRailStakingProcessor(address(this), strategy, 1000 ether);
+        exitProcessor = new StakedRailExitProcessor(strategy);
 
         manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
         qRail.setStakedRail(address(strategy));

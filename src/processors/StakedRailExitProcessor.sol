@@ -12,14 +12,10 @@ contract StakedRailExitProcessor {
     QueuedRailStrategy public immutable qRail;
     RailStakePositionManager public immutable positionManager;
 
-    constructor(
-        StakedRailStrategy stRailAddress,
-        QueuedRailStrategy qRailAddress,
-        RailStakePositionManager positionManagerAddress
-    ) {
+    constructor(StakedRailStrategy stRailAddress) {
         stRail = stRailAddress;
-        qRail = qRailAddress;
-        positionManager = positionManagerAddress;
+        qRail = stRailAddress.queuedRail();
+        positionManager = stRailAddress.positionManager();
     }
 
     function exitToQueuedRail(uint256 shares, address receiver, uint256 maxPositions)

@@ -127,10 +127,10 @@ contract StakedRailStrategyTest is Test {
         );
 
         resolver =
-            new RailWithdrawalResolver(address(this), qRail, manager, requests);
+            new RailWithdrawalResolver(address(this), qRail, requests);
         stakingProcessor =
-            new StakedRailStakingProcessor(address(this), strategy, manager, 1000 ether);
-        exitProcessor = new StakedRailExitProcessor(strategy, qRail, manager);
+            new StakedRailStakingProcessor(address(this), strategy, 1000 ether);
+        exitProcessor = new StakedRailExitProcessor(strategy);
 
         manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
         qRail.setStakedRail(address(strategy));
@@ -341,6 +341,13 @@ contract StakedRailStrategyTest is Test {
         qRail.setStakedRail(user);
     }
 
+    function testProcessorsDeriveDependenciesFromVaults() external view {
+        assertEq(address(exitProcessor.qRail()), address(strategy.queuedRail()));
+        assertEq(address(exitProcessor.positionManager()), address(strategy.positionManager()));
+        assertEq(address(stakingProcessor.positionManager()), address(strategy.positionManager()));
+        assertEq(address(resolver.positionManager()), address(qRail.positionManager()));
+    }
+
     function testDepositAndChunkedStakingAccounting() external {
         _deposit(user, 5000 ether);
 
@@ -441,7 +448,7 @@ contract StakedRailStrategyTest is Test {
         stakingProcessor.setStakeChunkSize(0);
 
         vm.expectRevert(StakedRailStakingProcessor.InvalidStakeChunkSize.selector);
-        new StakedRailStakingProcessor(address(this), strategy, manager, 0);
+        new StakedRailStakingProcessor(address(this), strategy, 0);
     }
 
     function testQueuedRailUsesExistingWithdrawalRequestLifecycle() external {
