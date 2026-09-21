@@ -20,6 +20,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
     bytes32 public constant CREATOR_ROLE = keccak256("CREATOR_ROLE");
     bytes32 public constant QUEUER_ROLE = keccak256("QUEUER_ROLE");
     bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     IERC20 public immutable rail;
     IRailgunStaking public immutable staking;
@@ -137,11 +138,11 @@ contract RailStakePositionManager is AccessControl, Pausable {
         return uint256(activeStakes.back());
     }
 
-    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 

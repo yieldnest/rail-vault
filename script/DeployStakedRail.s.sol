@@ -196,6 +196,7 @@ contract DeployStakedRail is Script {
     }
 
     function _wire(Config memory config, Deployed memory deployed) private {
+        deployed.manager.grantRole(deployed.manager.PAUSER_ROLE(), config.admin);
         deployed.manager.grantRole(deployed.manager.CREATOR_ROLE(), address(deployed.strategy));
         deployed.qRail.setStakedRail(address(deployed.strategy));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.processor));

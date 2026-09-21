@@ -38,6 +38,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
         staking = IRailgunStaking(RAILGUN_STAKING);
         rail = IERC20(staking.stakingToken());
         manager = new RailStakePositionManager(address(this), rail, staking);
+        manager.grantRole(manager.PAUSER_ROLE(), address(this));
         manager.grantRole(manager.CREATOR_ROLE(), strategy);
         manager.grantRole(manager.QUEUER_ROLE(), keeper);
         manager.grantRole(manager.CLAIMER_ROLE(), keeper);
@@ -350,9 +351,9 @@ contract RailStakePositionManagerIntegrationTest is Test {
         manager.claimPosition(0, receiver);
         _expectRole(queuer, manager.CLAIMER_ROLE());
         manager.claimMaturedPositions(new uint256[](0), receiver);
-        _expectRole(outsider, manager.DEFAULT_ADMIN_ROLE());
+        _expectRole(outsider, manager.PAUSER_ROLE());
         manager.pause();
-        _expectRole(outsider, manager.DEFAULT_ADMIN_ROLE());
+        _expectRole(outsider, manager.PAUSER_ROLE());
         manager.unpause();
         bytes32 creatorRole = manager.CREATOR_ROLE();
         _expectRole(outsider, manager.DEFAULT_ADMIN_ROLE());
@@ -528,18 +529,41 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _assertAccounting();
     }
 
-    function testPauseRequiresAdminRole() external {
-        _expectRole(keeper, manager.DEFAULT_ADMIN_ROLE());
+    function testPauseRequiresPauserRole() external {
+        _expectRole(keeper, manager.PAUSER_ROLE());
         manager.pause();
         assertFalse(manager.paused());
         _assertAccounting();
     }
 
-    function testUnpauseRequiresAdminRole() external {
+    function testUnpauseRequiresPauserRole() external {
         manager.pause();
-        _expectRole(keeper, manager.DEFAULT_ADMIN_ROLE());
+        _expectRole(keeper, manager.PAUSER_ROLE());
         manager.unpause();
         assertTrue(manager.paused());
+        _assertAccounting();
+    }
+
+    function testPauserRoleDelegationAndRevocation() external {
+        bytes32 role = manager.PAUSER_ROLE();
+        manager.revokeRole(role, address(this));
+        _expectRole(address(this), role);
+        manager.pause();
+        manager.grantRole(role, keeper);
+        assertFalse(manager.hasRole(manager.DEFAULT_ADMIN_ROLE(), keeper));
+        vm.prank(keeper);
+        manager.pause();
+        assertTrue(manager.paused());
+        _expectRole(address(this), role);
+        manager.unpause();
+        vm.prank(keeper);
+        manager.unpause();
+        manager.revokeRole(role, keeper);
+        _expectRole(keeper, role);
+        manager.pause();
+        _expectRole(keeper, role);
+        manager.unpause();
+        assertFalse(manager.paused());
         _assertAccounting();
     }
 

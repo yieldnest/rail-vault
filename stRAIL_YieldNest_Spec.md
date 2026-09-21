@@ -535,7 +535,7 @@ RailStakePositionManager:
   QUEUER_ROLE -> StakedRailStrategy (queuePosition)
   CLAIMER_ROLE -> QueuedRailStrategy (claimPosition / claimMaturedPositions)
   KEEPER_ROLE -> RailRewardsProcessor (claimRewards only)
-  PAUSER_ROLE
+  PAUSER_ROLE -> pause / unpause (initially granted to config.admin)
 
 stRAIL:
   PROCESSOR_ROLE -> StakedRailProcessor (staking and exits)
