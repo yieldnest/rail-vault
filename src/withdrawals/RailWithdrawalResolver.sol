@@ -47,6 +47,8 @@ contract RailWithdrawalResolver is AccessControl {
         while (processed < maxRequests && nextRequestToResolve < withdrawalRequest.nextRequestId()) {
             processed++;
             uint256 requestId = nextRequestToResolve;
+            // Withdrawal request ids are monotonically increasing so this situation only exists
+            // if the request was resolved by another resolver and deleted.
             if (!withdrawalRequest.requestExists(requestId)) {
                 nextRequestToResolve++;
                 continue;
