@@ -61,7 +61,12 @@ contract RailStakePositionManager is AccessControl, Pausable {
         return principal;
     }
 
-    function claimPosition(uint256 stakeId, address receiver) public onlyRole(CLAIMER_ROLE) returns (uint256 amount) {
+    function claimPosition(uint256 stakeId, address receiver)
+        public
+        onlyRole(CLAIMER_ROLE)
+        whenNotPaused
+        returns (uint256 amount)
+    {
         uint256 locktime;
         uint256 claimedTime;
         (amount, locktime, claimedTime) = _readPosition(stakeId);

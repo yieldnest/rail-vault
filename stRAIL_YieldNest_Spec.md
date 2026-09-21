@@ -585,13 +585,14 @@ The current deployment script does not yet perform this handoff.
 Use independent pause domains:
 
 1.  Deposit pause: stop new stRAIL deposits.
-2.  Stake pause: stop new RAILGUN stakes while permitting matured
-    claims.
+2.  Position manager pause: stop new stakes, unstaking, and matured
+    principal claims, including claims through nonempty batches.
 3.  Request pause: stop new requests while permitting existing request
     resolution.
 
-Emergency pausing should not unnecessarily prevent matured RAIL claims
-or settlement of existing requests.
+Matured principal claims resume after the position manager is unpaused.
+Settlement of existing requests backed by RAIL already held in qRAIL
+remains independent of the position manager's pause.
 
 ## Cancellation
 

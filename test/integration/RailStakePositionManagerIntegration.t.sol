@@ -290,14 +290,44 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _assertAccounting();
     }
 
-    function testClaimPositionWhilePaused() external {
+    function testClaimPositionRevertsWhilePaused() external {
         _create(1000 ether);
         _queue(0);
         manager.pause();
         vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
+        vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
+        vm.prank(keeper);
+        manager.claimPosition(0, receiver);
+        (,,,, uint256 claimedTime) = staking.stakes(address(manager), 0);
+        assertEq(claimedTime, 0);
+        assertEq(manager.queuedPrincipal(), 1000 ether);
+        _assertAccounting();
+        manager.unpause();
         _claim(0);
         _assertAccounting();
-        assertTrue(manager.paused());
+    }
+
+    function testClaimMaturedPositionsRevertsWhilePaused() external {
+        _create(1000 ether);
+        _create(2000 ether);
+        _queue(0);
+        _queue(1);
+        vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
+        manager.pause();
+        uint256[] memory ids = _pair(0, 1);
+        vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
+        vm.prank(keeper);
+        manager.claimMaturedPositions(ids, receiver);
+        for (uint256 i = 0; i < ids.length; i++) {
+            (,,,, uint256 claimedTime) = staking.stakes(address(manager), ids[i]);
+            assertEq(claimedTime, 0);
+        }
+        assertEq(manager.queuedPrincipal(), 3000 ether);
+        _assertAccounting();
+        manager.unpause();
+        vm.prank(keeper);
+        assertEq(manager.claimMaturedPositions(ids, receiver), 3000 ether);
+        _assertAccounting();
     }
 
     function testRoleIsolationAndRevocation() external {
