@@ -220,7 +220,7 @@ contract DeployStakedRail is Script {
 
     function _setProcessorRules(Config memory config, Deployed memory deployed) private {
         IVault.FunctionRule memory rule = _emptyRule();
-        deployed.strategy.setProcessorRule(config.rail, IERC20.transfer.selector, rule);
+        deployed.strategy.setProcessorRule(config.rail, IERC20.approve.selector, rule);
         deployed.strategy.setProcessorRule(
             address(deployed.manager), RailStakePositionManager.createPosition.selector, rule
         );

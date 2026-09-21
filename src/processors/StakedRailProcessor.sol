@@ -40,7 +40,7 @@ contract StakedRailProcessor is AccessControl {
             bytes[] memory data = new bytes[](2);
 
             targets[0] = address(rail);
-            data[0] = abi.encodeCall(IERC20.transfer, (address(positionManager), amount));
+            data[0] = abi.encodeCall(IERC20.approve, (address(positionManager), amount));
             targets[1] = address(positionManager);
             data[1] = abi.encodeCall(RailStakePositionManager.createPosition, (amount));
 

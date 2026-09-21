@@ -473,6 +473,11 @@ function rebalanceStaking(uint256 maxOperations)
 It creates full stake chunks and leaves only a sub-chunk remainder when
 the operation limit permits staking all available chunks.
 
+Each chunk uses one atomic stRAIL processor batch: approve the position
+manager for the chunk amount, then call `createPosition(amount)`. The
+manager pulls RAIL from its caller with `safeTransferFrom` before staking;
+it does not use any pre-existing manager balance to fund the position.
+
 `StakedRailProcessor` invokes stRAIL's atomic queue-and-mint instruction for
 complete stake positions. It then redeems the user's stRAIL shares
 for qRAIL, which the user can submit to the withdrawal queue.

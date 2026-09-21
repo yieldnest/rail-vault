@@ -41,6 +41,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
     }
 
     function createPosition(uint256 amount) external onlyRole(CREATOR_ROLE) whenNotPaused returns (uint256 stakeId) {
+        rail.safeTransferFrom(msg.sender, address(this), amount);
         rail.forceApprove(address(staking), amount);
         stakeId = staking.stake(amount);
         activeStakes.pushBack(bytes32(stakeId));

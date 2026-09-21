@@ -265,11 +265,46 @@ contract RailStakePositionManagerIntegrationTest is Test {
     }
 
     function testCreatePositionRevertsForInsufficientBalance() external {
+        vm.prank(strategy);
+        rail.approve(address(manager), 1000 ether);
         vm.expectRevert();
         vm.prank(strategy);
         manager.createPosition(1000 ether);
         assertEq(staking.stakesLength(address(manager)), 0);
         assertEq(rail.allowance(address(manager), address(staking)), 0);
+        _assertAccounting();
+    }
+
+    function testCreatePositionRequiresCallerAllowance() external {
+        deal(address(rail), strategy, 1000 ether);
+        vm.expectRevert();
+        vm.prank(strategy);
+        manager.createPosition(1000 ether);
+        assertEq(rail.balanceOf(strategy), 1000 ether);
+        assertEq(rail.balanceOf(address(manager)), 0);
+        assertEq(staking.stakesLength(address(manager)), 0);
+        _assertAccounting();
+    }
+
+    function testCreatePositionCannotUsePrefundedBalance() external {
+        deal(address(rail), address(manager), 1000 ether);
+        funded = 1000 ether;
+        vm.prank(strategy);
+        rail.approve(address(manager), 1000 ether);
+        vm.expectRevert();
+        vm.prank(strategy);
+        manager.createPosition(1000 ether);
+        assertEq(rail.balanceOf(address(manager)), 1000 ether);
+        assertEq(staking.stakesLength(address(manager)), 0);
+        _assertAccounting();
+    }
+
+    function testCreatePositionLeavesExistingManagerBalanceUntouched() external {
+        deal(address(rail), address(manager), 123 ether);
+        funded = 123 ether;
+        _create(1000 ether);
+        assertEq(rail.balanceOf(address(manager)), 123 ether);
+        assertEq(manager.activePrincipal(), 1000 ether);
         _assertAccounting();
     }
 
@@ -723,10 +758,17 @@ contract RailStakePositionManagerIntegrationTest is Test {
 
     function _create(uint256 amount) internal returns (uint256 id) {
         uint256[] memory beforeIds = manager.activeStakeIdsList();
-        deal(address(rail), address(manager), rail.balanceOf(address(manager)) + amount);
+        uint256 callerBalance = rail.balanceOf(strategy);
+        uint256 managerBalance = rail.balanceOf(address(manager));
+        deal(address(rail), strategy, callerBalance + amount);
         funded += amount;
         vm.prank(strategy);
+        rail.approve(address(manager), amount);
+        vm.prank(strategy);
         id = manager.createPosition(amount);
+        assertEq(rail.balanceOf(strategy), callerBalance);
+        assertEq(rail.balanceOf(address(manager)), managerBalance);
+        assertEq(rail.allowance(strategy, address(manager)), 0);
         assertEq(id, expectedAmounts.length);
         expectedAmounts.push(amount);
         expectedStakeTimes.push(block.timestamp);

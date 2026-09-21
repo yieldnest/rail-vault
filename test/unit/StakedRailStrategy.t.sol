@@ -17,6 +17,7 @@ import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
 import {StakedRailProcessor} from "../../src/processors/StakedRailProcessor.sol";
 import {QueuedRailProcessor} from "../../src/processors/QueuedRailProcessor.sol";
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
+import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
 import {RailWithdrawalResolver} from "../../src/withdrawals/RailWithdrawalResolver.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
@@ -318,7 +319,9 @@ contract StakedRailStrategyTest is Test {
         manager.createPosition(1000 ether);
 
         manager.grantRole(role, user);
-        rail.mint(address(manager), 1000 ether);
+        rail.mint(user, 1000 ether);
+        vm.prank(user);
+        rail.approve(address(manager), 1000 ether);
         vm.prank(user);
         manager.createPosition(1000 ether);
         assertEq(manager.activePrincipal(), 1000 ether);
@@ -463,6 +466,21 @@ contract StakedRailStrategyTest is Test {
         assertEq(strategy.balanceOf(user), 3000 ether);
     }
 
+    function testStakingFailureRollsBackCallerFundingAndApproval() external {
+        _deposit(user, 1000 ether);
+        vm.mockCallRevert(
+            address(staking), abi.encodeCall(IRailgunStaking.stake, (1000 ether)), abi.encodeWithSignature("StakeFailed()")
+        );
+        vm.expectRevert();
+        processor.rebalanceStaking(1);
+        assertEq(rail.balanceOf(address(strategy)), 1000 ether);
+        assertEq(rail.balanceOf(address(manager)), 0);
+        assertEq(rail.allowance(address(strategy), address(manager)), 0);
+        assertEq(rail.allowance(address(manager), address(staking)), 0);
+        assertEq(manager.activePositionCount(), 0);
+        assertEq(manager.activePrincipal(), 0);
+    }
+
     function testStakingLeavesRemainderAndHonorsOperationLimit() external {
         _deposit(user, 2500 ether);
         vm.prank(user);
@@ -474,6 +492,7 @@ contract StakedRailStrategyTest is Test {
         assertEq(processor.rebalanceStaking(10), 0);
         assertEq(manager.activePrincipal(), 2000 ether);
         assertEq(rail.balanceOf(address(strategy)), 500 ether);
+        assertEq(rail.allowance(address(strategy), address(manager)), 0);
         uint256[] memory ids = manager.activeStakeIdsList();
         for (uint256 i = 0; i < ids.length; i++) {
             (, uint256 principal,,,) = staking.stakes(address(manager), ids[i]);
@@ -584,7 +603,7 @@ contract StakedRailStrategyTest is Test {
 
     function _setProcessorRules() internal {
         IVault.FunctionRule memory rule = _emptyRule();
-        strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
+        strategy.setProcessorRule(address(rail), IERC20.approve.selector, rule);
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
         strategy.setProcessorRule(address(strategy), StakedRailStrategy.queuePosition.selector, rule);
 
