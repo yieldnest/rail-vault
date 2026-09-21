@@ -556,8 +556,9 @@ The resolver module, rather than a normal keeper EOA, should hold
 settlement authority.
 
 `QueuedRailProcessor` claims matured stakes through qRAIL's processor.
-Both it and the resolver gate their respective operations with their own
-`KEEPER_ROLE`. The processor has no request-resolution authority, and the
+It gates claims with `KEEPER_ROLE`; the resolver's `resolveRequests` is
+permissionless and always settles FIFO into the request Bags. The
+processor has no request-resolution authority, and the
 resolver has no qRAIL processor authority. Only qRAIL
 receives the manager's `CLAIMER_ROLE` in deployment. Processor rules allow
 single and batch claim calls to the manager and restrict the receiver to

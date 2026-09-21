@@ -128,7 +128,7 @@ contract StakedRailStrategyTest is Test {
         );
 
         resolver =
-            new RailWithdrawalResolver(address(this), qRail, requests);
+            new RailWithdrawalResolver(qRail, requests);
         processor =
             new StakedRailProcessor(address(this), strategy, 1000 ether);
 
@@ -147,7 +147,6 @@ contract StakedRailStrategyTest is Test {
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
-        resolver.grantRole(resolver.KEEPER_ROLE(), address(this));
         strategy.grantRole(strategy.UNPAUSER_ROLE(), address(this));
         strategy.unpause();
     }

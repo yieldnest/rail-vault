@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 
 import {QueuedRailStrategy} from "../QueuedRailStrategy.sol";
 
-contract RailWithdrawalResolver is AccessControl {
-    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
-
+contract RailWithdrawalResolver {
     QueuedRailStrategy public immutable qRail;
     WithdrawalRequest public immutable withdrawalRequest;
 
@@ -19,16 +16,14 @@ contract RailWithdrawalResolver is AccessControl {
     error IncompleteRedemption(uint256 requestId, uint256 remainingShares);
 
     constructor(
-        address admin,
         QueuedRailStrategy qRailAddress,
         WithdrawalRequest withdrawalRequestAddress
     ) {
         qRail = qRailAddress;
         withdrawalRequest = withdrawalRequestAddress;
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
-    function resolveRequests(uint256 maxRequests) external onlyRole(KEEPER_ROLE) returns (uint256 resolved) {
+    function resolveRequests(uint256 maxRequests) external returns (uint256 resolved) {
         address rail = qRail.asset();
         uint256 processed;
         while (processed < maxRequests && nextRequestToResolve < withdrawalRequest.nextRequestId()) {

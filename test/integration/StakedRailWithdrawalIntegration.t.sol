@@ -129,7 +129,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         );
 
         resolver =
-            new RailWithdrawalResolver(address(this), qRail, requests);
+            new RailWithdrawalResolver(qRail, requests);
         processor =
             new StakedRailProcessor(address(this), strategy, 1000 ether);
 
@@ -148,7 +148,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
-        resolver.grantRole(resolver.KEEPER_ROLE(), address(this));
         strategy.grantRole(strategy.UNPAUSER_ROLE(), address(this));
         strategy.unpause();
     }
@@ -187,6 +186,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertEq(queuedRailProcessor.claimMaturedPositions(stakeIds), 2000 ether);
         assertEq(rail.balanceOf(address(qRail)), 2000 ether);
 
+        vm.prank(bob);
         assertEq(resolver.resolveRequests(1), 1);
         WithdrawalRequest.Request memory request = requests.requests(requestId);
         assertEq(request.amountLocked, 0);
@@ -225,6 +225,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         vm.prank(bob);
         rail.transfer(address(qRail), 500 ether + 7);
         uint256 partialBurn = qRail.previewWithdraw(500 ether + 7);
+        vm.prank(bob);
         assertEq(resolver.resolveRequests(2), 0);
         assertEq(requests.requests(first).amountLocked, 1500 ether - partialBurn);
         assertEq(rail.balanceOf(requests.requests(first).bag), 500 ether + 7);
@@ -243,6 +244,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
             assertGt(assets, locked);
             uint256 bagBefore = rail.balanceOf(requests.requests(id).bag);
             uint256 supplyBefore = qRail.totalSupply();
+            vm.prank(bob);
             assertEq(resolver.resolveRequests(1), 1);
             assertEq(requests.requests(id).amountLocked, 0);
             assertEq(qRail.totalSupply(), supplyBefore - locked);

@@ -179,7 +179,6 @@ contract DeployStakedRail is Script {
 
         deployed.resolver =
             new RailWithdrawalResolver(
-                config.admin,
                 deployed.qRail,
                 deployed.withdrawalRequest
             );
@@ -215,7 +214,6 @@ contract DeployStakedRail is Script {
         deployed.bagFactory.grantRole(deployed.bagFactory.CREATOR_ROLE(), address(deployed.withdrawalRequest));
         deployed.withdrawalRequest.setWithdrawer(address(deployed.withdrawer));
         deployed.withdrawalRequest.grantRole(deployed.withdrawalRequest.RESOLVER_ROLE(), address(deployed.resolver));
-        deployed.resolver.grantRole(deployed.resolver.KEEPER_ROLE(), config.admin);
     }
 
     function _setProcessorRules(Config memory config, Deployed memory deployed) private {
