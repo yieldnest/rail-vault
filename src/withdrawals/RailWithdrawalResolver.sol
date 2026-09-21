@@ -18,6 +18,7 @@ contract RailWithdrawalResolver is AccessControl {
     uint256 public nextRequestToResolve;
 
     event RequestResolved(uint256 indexed requestId, uint256 railAmount);
+    error IncompleteRedemption(uint256 requestId, uint256 remainingShares);
 
     constructor(
         address admin,
@@ -42,7 +43,9 @@ contract RailWithdrawalResolver is AccessControl {
 
     function resolveRequests(uint256 maxRequests) external onlyRole(KEEPER_ROLE) returns (uint256 resolved) {
         address rail = qRail.asset();
-        while (resolved < maxRequests && nextRequestToResolve < withdrawalRequest.nextRequestId()) {
+        uint256 processed;
+        while (processed < maxRequests && nextRequestToResolve < withdrawalRequest.nextRequestId()) {
+            processed++;
             uint256 requestId = nextRequestToResolve;
             if (!withdrawalRequest.requestExists(requestId)) {
                 nextRequestToResolve++;
@@ -50,17 +53,25 @@ contract RailWithdrawalResolver is AccessControl {
             }
 
             WithdrawalRequest.Request memory request = withdrawalRequest.requests(requestId);
-            uint256 railAmount = request.amountLocked;
-            if (railAmount == 0) {
+            uint256 shares = request.amountLocked;
+            if (shares == 0) {
                 nextRequestToResolve++;
                 continue;
             }
-            if (IERC20(rail).balanceOf(address(qRail)) < railAmount) break;
+            uint256 fullAmount = qRail.previewRedeem(shares);
+            uint256 available = IERC20(rail).balanceOf(address(qRail));
+            uint256 railAmount = available < fullAmount ? available : fullAmount;
+            if (railAmount == 0) break;
 
-            withdrawalRequest.resolveWithdrawalRequest(requestId, rail, railAmount);
+            uint256 burned = withdrawalRequest.resolveWithdrawalRequest(requestId, rail, railAmount);
+            uint256 remaining = shares - burned;
+            // A full settlement must consume the exact locked shares, never skip rounding dust.
+            // TODO: Handle rounding residuals, including zero-value shares, without blocking the FIFO queue.
+            if (railAmount == fullAmount && remaining != 0) revert IncompleteRedemption(requestId, remaining);
+            emit RequestResolved(requestId, railAmount);
+            if (remaining != 0) break;
             nextRequestToResolve++;
             resolved++;
-            emit RequestResolved(requestId, railAmount);
         }
     }
 }

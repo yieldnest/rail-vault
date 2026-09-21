@@ -205,6 +205,48 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertFalse(requests.requestExists(requestId));
     }
 
+    function testResolverUsesLiveRateAndPreservesFifoAfterDonation() external {
+        _deposit(alice, 5000 ether);
+        processor.rebalanceStaking(5);
+        vm.startPrank(alice);
+        strategy.approve(address(processor), 2000 ether);
+        processor.exitToQueuedRail(2000 ether, alice, 2);
+        qRail.approve(address(requests), 2000 ether);
+        uint256 first = requests.requestWithdrawal(1500 ether, alice, "");
+        uint256 second = requests.requestWithdrawal(500 ether, alice, "");
+        vm.stopPrank();
+
+        deal(address(rail), bob, 500 ether + 7);
+        vm.prank(bob);
+        rail.transfer(address(qRail), 500 ether + 7);
+        uint256 partialBurn = qRail.previewWithdraw(500 ether + 7);
+        assertEq(resolver.resolveRequests(2), 0);
+        assertEq(requests.requests(first).amountLocked, 1500 ether - partialBurn);
+        assertEq(rail.balanceOf(requests.requests(first).bag), 500 ether + 7);
+        assertEq(requests.requests(second).amountLocked, 500 ether);
+        assertEq(rail.balanceOf(requests.requests(second).bag), 0);
+        assertEq(resolver.nextRequestToResolve(), first);
+
+        vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 0;
+        ids[1] = 1;
+        resolver.claimMaturedPositions(ids);
+        for (uint256 id = first; id <= second; id++) {
+            uint256 locked = requests.requests(id).amountLocked;
+            uint256 assets = qRail.previewRedeem(locked);
+            assertGt(assets, locked);
+            uint256 bagBefore = rail.balanceOf(requests.requests(id).bag);
+            uint256 supplyBefore = qRail.totalSupply();
+            assertEq(resolver.resolveRequests(1), 1);
+            assertEq(requests.requests(id).amountLocked, 0);
+            assertEq(qRail.totalSupply(), supplyBefore - locked);
+            assertEq(rail.balanceOf(requests.requests(id).bag), bagBefore + assets);
+            assertEq(resolver.nextRequestToResolve(), id + 1);
+        }
+        assertEq(qRail.balanceOf(address(requests)), 0);
+    }
+
     function _deposit(address account, uint256 amount) internal {
         deal(address(rail), account, amount);
         vm.startPrank(account);

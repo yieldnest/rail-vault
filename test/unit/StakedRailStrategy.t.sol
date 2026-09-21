@@ -516,6 +516,32 @@ contract StakedRailStrategyTest is Test {
         vm.stopPrank();
     }
 
+    function testFuzzResolverDonationSettlementBurnsExactShares(uint256 donation, uint256 locked) external {
+        donation = bound(donation, 0, 1_000_000 ether);
+        locked = bound(locked, 1, 2000 ether);
+        _deposit(user, 2000 ether);
+        processor.rebalanceStaking(2);
+        vm.startPrank(user);
+        strategy.approve(address(processor), 2000 ether);
+        processor.exitToQueuedRail(2000 ether, user, 2);
+        qRail.approve(address(requests), locked);
+        uint256 id = requests.requestWithdrawal(locked, user, "");
+        vm.stopPrank();
+        rail.mint(address(qRail), donation);
+        vm.warp(block.timestamp + 30 days + 1);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 0;
+        ids[1] = 1;
+        resolver.claimMaturedPositions(ids);
+        uint256 expected = qRail.previewRedeem(locked);
+        uint256 supplyBefore = qRail.totalSupply();
+        assertEq(resolver.resolveRequests(1), 1);
+        assertEq(requests.requests(id).amountLocked, 0);
+        assertEq(qRail.totalSupply(), supplyBefore - locked);
+        assertEq(rail.balanceOf(requests.requests(id).bag), expected);
+        assertEq(resolver.nextRequestToResolve(), id + 1);
+    }
+
     function _setProcessorRules() internal {
         IVault.FunctionRule memory rule = _emptyRule();
         strategy.setProcessorRule(address(rail), IERC20.transfer.selector, rule);
