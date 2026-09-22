@@ -3,15 +3,10 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
-import {IValidator} from "@yieldnest-vault/interface/IValidator.sol";
-import {Bag} from "@yieldnest-vault-withdrawals/Bag.sol";
 import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 import {IBag} from "@yieldnest-vault-withdrawals/interface/IBag.sol";
-import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
 
 import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
 import {StakedRailStrategy} from "../../src/core/StakedRailStrategy.sol";
@@ -21,6 +16,11 @@ import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../../src/core/RailStakePositionManager.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
 import {SingleAssetFIFOResolver} from "../../src/withdrawals/SingleAssetFIFOResolver.sol";
+
+import {RailStrategyDeployer} from "../../script/RailStrategyDeployer.sol";
+import {RailRewardsProcessor} from "../../src/processors/RailRewardsProcessor.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 contract StakedRailWithdrawalIntegrationTest is Test {
     address internal constant RAILGUN_STAKING = 0xEE6A649Aa3766bD117e12C161726b693A1B2Ee20;
@@ -40,118 +40,40 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     QueuedRailProcessor internal queuedRailProcessor;
     StakedRailProcessor internal processor;
 
+    RailStrategyDeployer internal deployer;
+    RailRewardsProcessor internal rewardsProcessor;
+
     function setUp() external {
         staking = IRailgunStaking(RAILGUN_STAKING);
         rail = IERC20(staking.stakingToken());
 
-        manager = new RailStakePositionManager(address(this), rail, staking);
+        deployer = new RailStrategyDeployer(_config(address(this), true));
+        RailStrategyDeployer.Deployed memory result = deployer.deploy();
+        manager = result.manager;
+        qRail = result.qRail;
+        strategy = result.strategy;
+        bagFactory = result.bagFactory;
+        requests = result.withdrawalRequest;
+        withdrawer = result.withdrawer;
+        resolver = result.resolver;
+        queuedRailProcessor = result.queuedRailProcessor;
+        processor = result.processor;
+        rewardsProcessor = result.rewardsProcessor;
+    }
 
-        QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
-        StakedRailStrategy strategyImplementation = new StakedRailStrategy();
-        qRail = QueuedRailStrategy(
-            payable(
-                address(
-                    new TransparentUpgradeableProxy(
-                        address(qRailImplementation),
-                        makeAddr("qRailProxyAdmin"),
-                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail), manager))
-                    )
-                )
-            )
-        );
-
-        strategy = StakedRailStrategy(
-            payable(
-                address(
-                    new TransparentUpgradeableProxy(
-                        address(strategyImplementation),
-                        makeAddr("stRailProxyAdmin"),
-                        abi.encodeCall(
-                            StakedRailStrategy.initialize, (address(this), address(rail), manager, qRail)
-                        )
-                    )
-                )
-            )
-        );
-
-        Bag bagImplementation = new Bag();
-        BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
-        bagFactory = BeaconProxyFactory(
-            address(
-                new TransparentUpgradeableProxy(
-                    address(bagFactoryImplementation),
-                    makeAddr("bagFactoryProxyAdmin"),
-                    abi.encodeCall(
-                        BeaconProxyFactory.initialize,
-                        (address(bagImplementation), address(this), address(this), address(this))
-                    )
-                )
-            )
-        );
-
-        MinAmountRequestPolicy requestPolicy = new MinAmountRequestPolicy(1);
-        WithdrawalRequest requestImplementation = new WithdrawalRequest();
-        requests = WithdrawalRequest(
-            payable(
-                address(
-                    new TransparentUpgradeableProxy(
-                        address(requestImplementation),
-                        makeAddr("requestProxyAdmin"),
-                        abi.encodeCall(
-                            WithdrawalRequest.initialize,
-                            (
-                                address(qRail),
-                                address(this),
-                                address(this),
-                                address(this),
-                                address(this),
-                                address(bagFactory),
-                                address(this),
-                                address(requestPolicy),
-                                uint256(1024)
-                            )
-                        )
-                    )
-                )
-            )
-        );
-
-        BaseWithdrawer withdrawerImplementation = new BaseWithdrawer();
-        withdrawer = BaseWithdrawer(
-            payable(
-                address(
-                    new TransparentUpgradeableProxy(
-                        address(withdrawerImplementation),
-                        makeAddr("withdrawerProxyAdmin"),
-                        abi.encodeCall(BaseWithdrawer.initialize, (address(qRail), address(requests)))
-                    )
-                )
-            )
-        );
-
-        resolver =
-            new SingleAssetFIFOResolver(IERC4626(address(qRail)), requests);
-        processor =
-            new StakedRailProcessor(address(this), strategy, 1000 ether);
-
-        queuedRailProcessor = new QueuedRailProcessor(address(this), qRail, manager);
-        queuedRailProcessor.grantRole(queuedRailProcessor.KEEPER_ROLE(), address(this));
-
-        manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
-        strategy.grantRole(strategy.PROCESSOR_ROLE(), address(processor));
-        strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
-        qRail.grantRole(qRail.PROCESSOR_ROLE(), address(queuedRailProcessor));
-        qRail.grantRole(qRail.PROCESSOR_MANAGER_ROLE(), address(this));
-        _setProcessorRules();
-        manager.grantRole(manager.CLAIMER_ROLE(), address(qRail));
-        manager.grantRole(manager.QUEUER_ROLE(), address(strategy));
-        bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
-        requests.setWithdrawer(address(withdrawer));
-        qRail.grantRole(qRail.ALLOCATOR_ROLE(), address(strategy));
-        qRail.grantRole(qRail.ALLOCATOR_ROLE(), address(withdrawer));
-        requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
-        strategy.grantRole(strategy.UNPAUSER_ROLE(), address(this));
-        strategy.unpause();
+    function _config(address admin, bool unpause) internal view returns (RailStrategyDeployer.Config memory config) {
+        address[] memory tokens = new address[](1);
+        tokens[0] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        config = RailStrategyDeployer.Config({
+            admin: admin,
+            rail: address(rail),
+            staking: address(staking),
+            governorRewards: 0xA02782CE1bF85f56f8cC7C0E66e61299Ac75c86f,
+            rewardTokens: tokens,
+            nextRewardClaimInterval: 0,
+            stakeChunkSize: 1000 ether,
+            unpause: unpause
+        });
     }
 
     function testFullStakedRailToRequestNftToRailClaimFlow() external {
@@ -210,6 +132,110 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         vm.prank(bob);
         requests.burn(requestId);
         assertFalse(requests.requestExists(requestId));
+    }
+
+    function testDeployerConfiguresRolesAndRelinquishesControl() external view {
+        address bootstrap = address(deployer);
+        assertTrue(deployer.deployed());
+        assertFalse(strategy.paused());
+        assertTrue(qRail.getHasAllocator());
+        assertEq(processor.stakeChunkSize(), 1000 ether);
+        assertTrue(manager.hasRole(manager.CREATOR_ROLE(), address(strategy)));
+        assertTrue(manager.hasRole(manager.QUEUER_ROLE(), address(strategy)));
+        assertTrue(manager.hasRole(manager.CLAIMER_ROLE(), address(qRail)));
+        assertTrue(manager.hasRole(manager.KEEPER_ROLE(), address(rewardsProcessor)));
+        assertTrue(manager.hasRole(manager.PAUSER_ROLE(), address(this)));
+        assertTrue(strategy.hasRole(strategy.PROCESSOR_ROLE(), address(processor)));
+        assertTrue(qRail.hasRole(qRail.PROCESSOR_ROLE(), address(queuedRailProcessor)));
+        assertTrue(qRail.hasRole(qRail.ALLOCATOR_ROLE(), address(strategy)));
+        assertTrue(qRail.hasRole(qRail.ALLOCATOR_ROLE(), address(withdrawer)));
+        assertTrue(requests.hasRole(requests.RESOLVER_ROLE(), address(resolver)));
+        assertTrue(requests.hasRole(requests.CONFIGURATION_MANAGER_ROLE(), address(this)));
+        assertTrue(bagFactory.hasRole(bagFactory.CREATOR_ROLE(), address(requests)));
+        assertTrue(bagFactory.hasRole(bagFactory.IMPLEMENTATION_MANAGER_ROLE(), address(this)));
+        assertTrue(queuedRailProcessor.hasRole(queuedRailProcessor.KEEPER_ROLE(), address(this)));
+
+        assertFalse(strategy.hasRole(strategy.PROCESSOR_MANAGER_ROLE(), bootstrap));
+        assertFalse(strategy.hasRole(strategy.UNPAUSER_ROLE(), bootstrap));
+        assertFalse(qRail.hasRole(qRail.PROCESSOR_MANAGER_ROLE(), bootstrap));
+        assertFalse(requests.hasRole(requests.RESOLVER_ROLE(), bootstrap));
+        assertFalse(requests.hasRole(requests.CONFIGURATION_MANAGER_ROLE(), bootstrap));
+        assertFalse(bagFactory.hasRole(bagFactory.CREATOR_ROLE(), bootstrap));
+        assertFalse(requests.hasRole(requests.RESOLVER_ROLE(), address(this)));
+
+        address[8] memory components = [
+            address(manager),
+            address(strategy),
+            address(qRail),
+            address(bagFactory),
+            address(requests),
+            address(processor),
+            address(queuedRailProcessor),
+            address(rewardsProcessor)
+        ];
+        for (uint256 i; i < components.length; i++) {
+            assertTrue(IAccessControl(components[i]).hasRole(bytes32(0), address(this)));
+            assertFalse(IAccessControl(components[i]).hasRole(bytes32(0), bootstrap));
+        }
+        address[5] memory proxies =
+            [address(strategy), address(qRail), address(bagFactory), address(requests), address(withdrawer)];
+        for (uint256 i; i < proxies.length; i++) {
+            address proxyAdmin =
+                address(uint160(uint256(vm.load(proxies[i], bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1)))));
+            assertEq(Ownable(proxyAdmin).owner(), address(this));
+        }
+    }
+
+    function testDeployerIsSingleUseAndOperatorOnly() external {
+        vm.expectRevert(RailStrategyDeployer.OnlyOperator.selector);
+        vm.prank(alice);
+        deployer.deploy();
+        vm.expectRevert(RailStrategyDeployer.AlreadyDeployed.selector);
+        deployer.deploy();
+    }
+
+    function testDeploymentFailureRollsBackSingleUseFlag() external {
+        RailStrategyDeployer.Config memory config = _config(address(this), true);
+        config.stakeChunkSize = 0;
+        RailStrategyDeployer another = new RailStrategyDeployer(config);
+        vm.expectRevert(StakedRailProcessor.InvalidStakeChunkSize.selector);
+        another.deploy();
+        assertFalse(another.deployed());
+    }
+
+    function testDeployerRejectsZeroAdmin() external {
+        RailStrategyDeployer.Config memory config = _config(address(0), false);
+        vm.expectRevert(RailStrategyDeployer.InvalidAdmin.selector);
+        new RailStrategyDeployer(config);
+    }
+
+    function testDeployerCanHandControlToDifferentAdminAndLeavePaused() external {
+        RailStrategyDeployer another = new RailStrategyDeployer(_config(bob, false));
+        RailStrategyDeployer.Deployed memory result = another.deploy();
+        assertTrue(result.strategy.paused());
+        assertTrue(result.strategy.hasRole(bytes32(0), bob));
+        assertFalse(result.strategy.hasRole(bytes32(0), address(this)));
+        assertFalse(result.strategy.hasRole(bytes32(0), address(another)));
+        assertTrue(result.strategy.hasRole(result.strategy.UNPAUSER_ROLE(), bob));
+        vm.prank(bob);
+        result.strategy.unpause();
+        assertFalse(result.strategy.paused());
+    }
+
+    function testDeployedRulesRestrictApprovalAndClaimRecipients() external {
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(rail);
+        data[0] = abi.encodeCall(IERC20.approve, (alice, 1));
+        vm.expectRevert(abi.encodeWithSignature("AddressNotInAllowlist(address)", alice));
+        vm.prank(address(processor));
+        strategy.processor(targets, values, data);
+        targets[0] = address(manager);
+        data[0] = abi.encodeCall(RailStakePositionManager.claimPosition, (0, alice));
+        vm.expectRevert(abi.encodeWithSignature("AddressNotInAllowlist(address)", alice));
+        vm.prank(address(queuedRailProcessor));
+        qRail.processor(targets, values, data);
     }
 
     function testResolverUsesLiveRateAndPreservesFifoAfterDonation() external {
@@ -306,33 +332,5 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         rail.approve(address(strategy), amount);
         strategy.deposit(amount, account);
         vm.stopPrank();
-    }
-
-    function _setProcessorRules() internal {
-        IVault.FunctionRule memory rule = _emptyRule();
-        rule.paramRules = new IVault.ParamRule[](2);
-        rule.paramRules[0].paramType = IVault.ParamType.ADDRESS;
-        rule.paramRules[0].allowList = new address[](1);
-        rule.paramRules[0].allowList[0] = address(manager);
-        rule.paramRules[1].paramType = IVault.ParamType.UINT256;
-        strategy.setProcessorRule(address(rail), IERC20.approve.selector, rule);
-        rule = _emptyRule();
-        strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
-        strategy.setProcessorRule(address(strategy), StakedRailStrategy.queuePosition.selector, rule);
-
-        rule.paramRules = new IVault.ParamRule[](2);
-        rule.paramRules[0].paramType = IVault.ParamType.UINT256;
-        rule.paramRules[1].paramType = IVault.ParamType.ADDRESS;
-        rule.paramRules[1].allowList = new address[](1);
-        rule.paramRules[1].allowList[0] = address(qRail);
-        qRail.setProcessorRule(address(manager), RailStakePositionManager.claimPosition.selector, rule);
-        rule.paramRules[0].isArray = true;
-        qRail.setProcessorRule(address(manager), RailStakePositionManager.claimMaturedPositions.selector, rule);
-    }
-
-    function _emptyRule() internal pure returns (IVault.FunctionRule memory rule) {
-        rule.isActive = true;
-        rule.paramRules = new IVault.ParamRule[](0);
-        rule.validator = IValidator(address(0));
     }
 }

@@ -17,6 +17,8 @@ Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 - `src/processors/QueuedRailProcessor.sol`: claims matured RAIL into qRAIL through its processor.
 - `src/withdrawals/SingleAssetFIFOResolver.sol`: permissionless FIFO settlement of qRAIL withdrawal requests.
 - `script/DeployStakedRail.s.sol`: proxy deployment and role wiring.
+- `script/RailStrategyDeployer.sol`: shared single-use deployer used by the script and mainnet integration tests; constructor configuration, parameterless `deploy()`.
+- `script/libraries/RailDeploymentLib.sol`: externally linked deployment libraries that keep child creation code out of the deployer runtime.
 
 ## Commands
 
@@ -42,7 +44,16 @@ Optional deployment environment variables:
 - `STAKE_CHUNK_SIZE`, default `1000 ether`
 - `UNPAUSE`, default `false`
 
-`ADMIN` must be the broadcasting account for initial setup because YieldNest initializes only `DEFAULT_ADMIN_ROLE`.
+`ADMIN` can differ from the broadcasting account. The script deploys
+`RailStrategyDeployer` with constructor configuration, then calls its parameterless
+`deploy()`. External deployment libraries must be linked/deployed by Foundry.
+The deployer configures the system atomically, assigns proxy ownership and roles
+to `ADMIN`, and relinquishes all temporary permissions. Only its creator can
+call `deploy()`, and only one successful deployment is allowed.
+
+Before broadcasting, run `forge build --sizes` and check deployment gas against
+the target network's limits. Passing fork tests alone does not establish that
+the implementations and linked libraries meet on-chain deployment limits.
 
 ## Notes
 

@@ -590,7 +590,13 @@ through Delegator for a specific target's `pause()` selector, provided
 Delegator holds the target's pause authority. Unpausing and upgrades
 remain under governance.
 
-The current deployment script does not yet perform this handoff.
+The shared `RailStrategyDeployer` performs the admin handoff atomically to
+the configured `ADMIN`, which may be Delegator rather than the broadcaster.
+Guardian authorization remains a separate governance action. The deployer
+accepts configuration in its constructor; its parameterless `deploy()` uses
+externally linked deployment libraries, wires all roles and processor rules,
+and relinquishes its temporary permissions. The mainnet integration fixture
+uses this same deployment path.
 
 ## Emergency Behavior
 
