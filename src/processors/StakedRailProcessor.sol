@@ -4,9 +4,9 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
-import {QueuedRailStrategy} from "../QueuedRailStrategy.sol";
-import {StakedRailStrategy} from "../StakedRailStrategy.sol";
-import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
+import {QueuedRailStrategy} from "../core/QueuedRailStrategy.sol";
+import {StakedRailStrategy} from "../core/StakedRailStrategy.sol";
+import {RailStakePositionManager} from "../core/RailStakePositionManager.sol";
 
 contract StakedRailProcessor is AccessControl {
     bytes32 public constant CONFIG_MANAGER_ROLE = keccak256("CONFIG_MANAGER_ROLE");

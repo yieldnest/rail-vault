@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {RailRewardsProcessor} from "../../src/processors/RailRewardsProcessor.sol";
-import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
+import {RailStakePositionManager} from "../../src/core/RailStakePositionManager.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockRailgunGovernorRewards} from "../mocks/MockRailgunGovernorRewards.sol";
 import {MockRailgunStaking} from "../mocks/MockRailgunStaking.sol";

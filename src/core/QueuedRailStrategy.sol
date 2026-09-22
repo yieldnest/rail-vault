@@ -6,7 +6,7 @@ import {BaseStrategy} from "@yieldnest-vault/strategy/BaseStrategy.sol";
 import {VaultLib} from "@yieldnest-vault/library/VaultLib.sol";
 
 import {RailProvider} from "./RailProvider.sol";
-import {RailStakePositionManager} from "./railgun/RailStakePositionManager.sol";
+import {RailStakePositionManager} from "./RailStakePositionManager.sol";
 
 contract QueuedRailStrategy is BaseStrategy {
     string public constant Q_RAIL_VERSION = "0.1.0";

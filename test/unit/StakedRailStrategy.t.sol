@@ -13,12 +13,12 @@ import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.
 import {IBag} from "@yieldnest-vault-withdrawals/interface/IBag.sol";
 import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
 
-import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
-import {RailProvider} from "../../src/RailProvider.sol";
-import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
+import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
+import {RailProvider} from "../../src/core/RailProvider.sol";
+import {StakedRailStrategy} from "../../src/core/StakedRailStrategy.sol";
 import {StakedRailProcessor} from "../../src/processors/StakedRailProcessor.sol";
 import {QueuedRailProcessor} from "../../src/processors/QueuedRailProcessor.sol";
-import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
+import {RailStakePositionManager} from "../../src/core/RailStakePositionManager.sol";
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
 import {SingleAssetFIFOResolver} from "../../src/withdrawals/SingleAssetFIFOResolver.sol";

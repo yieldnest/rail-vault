@@ -114,11 +114,14 @@ Recommended layout:
 
 ``` text
 src/
-├── StakedRailStrategy.sol
-├── QueuedRail.sol
+├── core/
+│   ├── StakedRailStrategy.sol
+│   ├── QueuedRailStrategy.sol
+│   ├── RailProvider.sol
+│   └── RailStakePositionManager.sol
 ├── railgun/
 │   ├── IRailgunStaking.sol
-│   └── RailStakePositionManager.sol
+│   └── IRailgunGovernorRewards.sol
 ├── withdrawals/
 │   └── SingleAssetFIFOResolver.sol
 └── interface/

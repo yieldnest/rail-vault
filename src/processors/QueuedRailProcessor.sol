@@ -3,8 +3,8 @@ pragma solidity ^0.8.24;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
-import {QueuedRailStrategy} from "../QueuedRailStrategy.sol";
-import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
+import {QueuedRailStrategy} from "../core/QueuedRailStrategy.sol";
+import {RailStakePositionManager} from "../core/RailStakePositionManager.sol";
 
 contract QueuedRailProcessor is AccessControl {
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");

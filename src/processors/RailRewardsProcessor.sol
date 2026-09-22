@@ -5,7 +5,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {IRailgunGovernorRewards} from "../railgun/IRailgunGovernorRewards.sol";
-import {RailStakePositionManager} from "../railgun/RailStakePositionManager.sol";
+import {RailStakePositionManager} from "../core/RailStakePositionManager.sol";
 
 contract RailRewardsProcessor is AccessControl {
     bytes32 public constant CONFIG_MANAGER_ROLE = keccak256("CONFIG_MANAGER_ROLE");

@@ -6,7 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
-import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
+import {RailStakePositionManager} from "../../src/core/RailStakePositionManager.sol";
 import {IRailgunGovernorRewards} from "../../src/railgun/IRailgunGovernorRewards.sol";
 
 interface IMainnetGovernorRewards is IRailgunGovernorRewards {

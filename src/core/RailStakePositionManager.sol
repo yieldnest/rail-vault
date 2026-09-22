@@ -6,8 +6,8 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {IRailgunGovernorRewards} from "./IRailgunGovernorRewards.sol";
-import {IRailgunStaking} from "./IRailgunStaking.sol";
+import {IRailgunGovernorRewards} from "../railgun/IRailgunGovernorRewards.sol";
+import {IRailgunStaking} from "../railgun/IRailgunStaking.sol";
 import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 
 contract RailStakePositionManager is AccessControl, Pausable {
