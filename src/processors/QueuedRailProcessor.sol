@@ -12,9 +12,9 @@ contract QueuedRailProcessor is AccessControl {
     QueuedRailStrategy public immutable qRail;
     RailStakePositionManager public immutable positionManager;
 
-    constructor(address admin, QueuedRailStrategy qRailAddress) {
+    constructor(address admin, QueuedRailStrategy qRailAddress, RailStakePositionManager positionManagerAddress) {
         qRail = qRailAddress;
-        positionManager = qRailAddress.positionManager();
+        positionManager = positionManagerAddress;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 

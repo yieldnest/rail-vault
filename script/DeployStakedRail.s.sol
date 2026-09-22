@@ -194,7 +194,7 @@ contract DeployStakedRail is Script {
             deployed.strategy,
             config.stakeChunkSize
         );
-        deployed.queuedRailProcessor = new QueuedRailProcessor(config.admin, deployed.qRail);
+        deployed.queuedRailProcessor = new QueuedRailProcessor(config.admin, deployed.qRail, deployed.manager);
         deployed.rewardsProcessor = new RailRewardsProcessor(
             config.admin,
             IRailgunGovernorRewards(config.governorRewards),

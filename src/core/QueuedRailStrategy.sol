@@ -11,8 +11,6 @@ import {RailStakePositionManager} from "./RailStakePositionManager.sol";
 contract QueuedRailStrategy is BaseStrategy {
     string public constant Q_RAIL_VERSION = "0.1.0";
 
-    RailStakePositionManager public positionManager;
-
     function initialize(address admin, address rail, RailStakePositionManager positionManagerAddress)
         external
         initializer
@@ -25,8 +23,6 @@ contract QueuedRailStrategy is BaseStrategy {
         VaultLib.setProvider(
             address(new RailProvider(rail, address(0), address(positionManagerAddress.unlockedRail()), address(0)))
         );
-
-        positionManager = positionManagerAddress;
     }
 
     function _feeOnRaw(uint256, address) public pure override returns (uint256) {

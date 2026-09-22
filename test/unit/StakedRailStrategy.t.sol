@@ -135,7 +135,7 @@ contract StakedRailStrategyTest is Test {
         processor =
             new StakedRailProcessor(address(this), strategy, 1000 ether);
 
-        queuedRailProcessor = new QueuedRailProcessor(address(this), qRail);
+        queuedRailProcessor = new QueuedRailProcessor(address(this), qRail, manager);
         queuedRailProcessor.grantRole(queuedRailProcessor.KEEPER_ROLE(), address(this));
 
         manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
@@ -480,7 +480,7 @@ contract StakedRailStrategyTest is Test {
         vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
         vm.prank(user);
         qRail.initialize(user, address(rail), manager);
-        assertEq(address(qRail.positionManager()), address(manager));
+        assertTrue(qRail.getAsset(address(manager.unlockedRail())).active);
     }
 
     function testQueuedRailOnlyAcceptsUnlockedRailDeposits() external view {
@@ -600,10 +600,11 @@ contract StakedRailStrategyTest is Test {
         queuedRailProcessor.claimMaturedPositions(ids);
     }
 
-    function testProcessorsDeriveDependenciesFromVaults() external view {
+    function testProcessorDependencies() external view {
         assertEq(address(processor.qRail()), address(strategy.queuedRail()));
         assertEq(address(processor.positionManager()), address(strategy.positionManager()));
-        assertEq(address(queuedRailProcessor.positionManager()), address(qRail.positionManager()));
+        assertEq(address(queuedRailProcessor.qRail()), address(qRail));
+        assertEq(address(queuedRailProcessor.positionManager()), address(manager));
     }
 
     function testProcessorRoleRevocationBlocksStakingAndQueueing() external {
