@@ -14,6 +14,7 @@ import {IBag} from "@yieldnest-vault-withdrawals/interface/IBag.sol";
 import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
 
 import {QueuedRailStrategy} from "../../src/QueuedRailStrategy.sol";
+import {RailProvider} from "../../src/RailProvider.sol";
 import {StakedRailStrategy} from "../../src/StakedRailStrategy.sol";
 import {StakedRailProcessor} from "../../src/processors/StakedRailProcessor.sol";
 import {QueuedRailProcessor} from "../../src/processors/QueuedRailProcessor.sol";
@@ -153,6 +154,39 @@ contract StakedRailStrategyTest is Test {
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
         strategy.grantRole(strategy.UNPAUSER_ROLE(), address(this));
         strategy.unpause();
+    }
+
+    function testProviderUsesLiveQueuedRailRate() external {
+        RailProvider provider = RailProvider(strategy.provider());
+        assertEq(provider.getRate(address(rail)), 1 ether);
+        assertEq(provider.getRate(address(qRail)), 1 ether);
+
+        _deposit(user, 2000 ether);
+        processor.rebalanceStaking(2);
+        _queueThroughStrategy();
+        assertEq(strategy.totalBaseAssets(), 2000 ether);
+
+        rail.mint(address(qRail), 500 ether);
+        uint256 liveRate = qRail.convertToAssets(1 ether);
+        assertGt(liveRate, 1 ether);
+        assertEq(provider.getRate(address(qRail)), liveRate);
+        assertEq(provider.getRate(address(rail)), 1 ether);
+        assertEq(strategy.totalBaseAssets(), manager.activePrincipal() + 1000 * liveRate);
+
+        // Remove the donation to verify the rate also tracks decreases in backing.
+        deal(address(rail), address(qRail), 0);
+        assertEq(provider.getRate(address(qRail)), 1 ether);
+        assertEq(strategy.totalBaseAssets(), 2000 ether);
+    }
+
+    function testProviderRejectsUnsupportedAssets() external {
+        RailProvider provider = RailProvider(strategy.provider());
+        vm.expectRevert(abi.encodeWithSelector(RailProvider.UnsupportedAsset.selector, user));
+        provider.getRate(user);
+
+        RailProvider railOnlyProvider = RailProvider(qRail.provider());
+        vm.expectRevert(abi.encodeWithSelector(RailProvider.UnsupportedAsset.selector, address(0)));
+        railOnlyProvider.getRate(address(0));
     }
 
     function testMintQueuedRailRejectsDirectCalls() external {

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IProvider} from "@yieldnest-vault/interface/IProvider.sol";
 
 contract RailProvider is IProvider {
@@ -18,7 +19,10 @@ contract RailProvider is IProvider {
     }
 
     function getRate(address asset) external view returns (uint256) {
-        if (asset != rail && asset != queuedRail) revert UnsupportedAsset(asset);
-        return rate;
+        if (asset == rail) return rate;
+        if (asset == queuedRail && queuedRail != address(0)) {
+            return IERC4626(queuedRail).convertToAssets(10 ** IERC20Metadata(queuedRail).decimals());
+        }
+        revert UnsupportedAsset(asset);
     }
 }
