@@ -268,7 +268,13 @@ contract StakedRailWithdrawalIntegrationTest is Test {
 
     function _setProcessorRules() internal {
         IVault.FunctionRule memory rule = _emptyRule();
+        rule.paramRules = new IVault.ParamRule[](2);
+        rule.paramRules[0].paramType = IVault.ParamType.ADDRESS;
+        rule.paramRules[0].allowList = new address[](1);
+        rule.paramRules[0].allowList[0] = address(manager);
+        rule.paramRules[1].paramType = IVault.ParamType.UINT256;
         strategy.setProcessorRule(address(rail), IERC20.approve.selector, rule);
+        rule = _emptyRule();
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
         strategy.setProcessorRule(address(strategy), StakedRailStrategy.queuePosition.selector, rule);
 

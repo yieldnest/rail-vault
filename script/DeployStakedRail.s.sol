@@ -225,7 +225,13 @@ contract DeployStakedRail is Script {
 
     function _setProcessorRules(Config memory config, Deployed memory deployed) private {
         IVault.FunctionRule memory rule = _emptyRule();
+        rule.paramRules = new IVault.ParamRule[](2);
+        rule.paramRules[0].paramType = IVault.ParamType.ADDRESS;
+        rule.paramRules[0].allowList = new address[](1);
+        rule.paramRules[0].allowList[0] = address(deployed.manager);
+        rule.paramRules[1].paramType = IVault.ParamType.UINT256;
         deployed.strategy.setProcessorRule(config.rail, IERC20.approve.selector, rule);
+        rule = _emptyRule();
         deployed.strategy.setProcessorRule(
             address(deployed.manager), RailStakePositionManager.createPosition.selector, rule
         );

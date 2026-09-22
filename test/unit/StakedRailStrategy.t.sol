@@ -189,6 +189,24 @@ contract StakedRailStrategyTest is Test {
         railOnlyProvider.getRate(address(0));
     }
 
+    function testApprovalRuleRestrictsSpenderToPositionManager() external {
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(rail);
+        data[0] = abi.encodeCall(IERC20.approve, (user, 1000 ether));
+
+        vm.expectRevert(abi.encodeWithSignature("AddressNotInAllowlist(address)", user));
+        vm.prank(address(processor));
+        strategy.processor(targets, values, data);
+        assertEq(rail.allowance(address(strategy), user), 0);
+
+        data[0] = abi.encodeCall(IERC20.approve, (address(manager), 1000 ether));
+        vm.prank(address(processor));
+        strategy.processor(targets, values, data);
+        assertEq(rail.allowance(address(strategy), address(manager)), 1000 ether);
+    }
+
     function testMintQueuedRailRejectsDirectCalls() external {
         vm.expectRevert(QueuedRailStrategy.OnlyStakedRail.selector);
         vm.prank(user);
@@ -646,7 +664,13 @@ contract StakedRailStrategyTest is Test {
 
     function _setProcessorRules() internal {
         IVault.FunctionRule memory rule = _emptyRule();
+        rule.paramRules = new IVault.ParamRule[](2);
+        rule.paramRules[0].paramType = IVault.ParamType.ADDRESS;
+        rule.paramRules[0].allowList = new address[](1);
+        rule.paramRules[0].allowList[0] = address(manager);
+        rule.paramRules[1].paramType = IVault.ParamType.UINT256;
         strategy.setProcessorRule(address(rail), IERC20.approve.selector, rule);
+        rule = _emptyRule();
         strategy.setProcessorRule(address(manager), RailStakePositionManager.createPosition.selector, rule);
         strategy.setProcessorRule(address(strategy), StakedRailStrategy.queuePosition.selector, rule);
 
