@@ -252,6 +252,10 @@ stake IDs revert in RAILGUN's stake lookup.
 
 `qRAIL` is a YieldNest `BaseStrategy` share backed by UnlockedRail and
 liquid RAIL. Its inherited conversions determine the live exchange rate.
+Its initializer only initializes the base vault from the admin and decimals.
+The shared deployment setup library creates and assigns the provider, registers assets,
+enables allocator checks and configures withdrawability in the same deployment
+transaction, then revokes its temporary setup roles.
 
 ``` text
 Name: Queued RAIL

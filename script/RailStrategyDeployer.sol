@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 import {IValidator} from "@yieldnest-vault/interface/IValidator.sol";
@@ -20,6 +21,7 @@ import {SingleAssetFIFOResolver} from "../src/withdrawals/SingleAssetFIFOResolve
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {
     QueuedRailDeploymentLib,
+    QueuedRailSetupLib,
     StakedRailDeploymentLib,
     RailManagerDeploymentLib,
     RailProcessorsDeploymentLib,
@@ -85,10 +87,14 @@ contract RailStrategyDeployer {
                     new TransparentUpgradeableProxy(
                         QueuedRailDeploymentLib.deployImplementation(),
                         settings.admin,
-                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), settings.rail, result.manager))
+                        abi.encodeCall(
+                            QueuedRailStrategy.initialize,
+                            (address(this), IERC20Metadata(settings.rail).decimals())
+                        )
                     )
                 ))
         );
+        QueuedRailSetupLib.configure(result.qRail, settings.rail, address(result.manager.unlockedRail()));
         result.strategy = StakedRailStrategy(
             payable(address(
                     new TransparentUpgradeableProxy(

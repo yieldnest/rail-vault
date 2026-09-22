@@ -15,6 +15,7 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 
 import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
 import {RailProvider} from "../../src/core/RailProvider.sol";
+import {QueuedRailSetupLib} from "../../script/libraries/RailDeploymentLib.sol";
 import {RailReceiptToken} from "../../src/core/RailReceiptToken.sol";
 import {StakedRailStrategy} from "../../src/core/StakedRailStrategy.sol";
 import {StakedRailProcessor} from "../../src/processors/StakedRailProcessor.sol";
@@ -55,12 +56,13 @@ contract StakedRailStrategyTest is Test {
                     new TransparentUpgradeableProxy(
                         address(qRailImplementation),
                         makeAddr("qRailProxyAdmin"),
-                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail), manager))
+                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), rail.decimals()))
                     )
                 )
             )
         );
 
+        QueuedRailSetupLib.configure(qRail, address(rail), address(manager.unlockedRail()));
         strategy = StakedRailStrategy(
             payable(
                 address(
@@ -476,10 +478,10 @@ contract StakedRailStrategyTest is Test {
 
     function testQueuedRailCannotBeReinitialized() external {
         vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
-        qRail.initialize(address(this), address(rail), manager);
+        qRail.initialize(address(this), 18);
         vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
         vm.prank(user);
-        qRail.initialize(user, address(rail), manager);
+        qRail.initialize(user, 18);
         assertTrue(qRail.getAsset(address(manager.unlockedRail())).active);
     }
 

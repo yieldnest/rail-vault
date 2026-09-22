@@ -10,6 +10,7 @@ import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.
 import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
 import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
+import {RailProvider} from "../../src/core/RailProvider.sol";
 import {StakedRailStrategy} from "../../src/core/StakedRailStrategy.sol";
 import {RailStakePositionManager} from "../../src/core/RailStakePositionManager.sol";
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
@@ -24,6 +25,22 @@ import {SingleAssetFIFOResolver} from "../../src/withdrawals/SingleAssetFIFOReso
 library QueuedRailDeploymentLib {
     function deployImplementation() external returns (address) {
         return address(new QueuedRailStrategy());
+    }
+}
+
+library QueuedRailSetupLib {
+    function configure(QueuedRailStrategy qRail, address rail, address unlockedRail) external {
+        qRail.grantRole(qRail.ASSET_MANAGER_ROLE(), address(this));
+        qRail.grantRole(qRail.ALLOCATOR_MANAGER_ROLE(), address(this));
+        qRail.grantRole(qRail.PROVIDER_MANAGER_ROLE(), address(this));
+        qRail.setProvider(address(new RailProvider(rail, address(0), unlockedRail, address(0))));
+        qRail.addAsset(rail, false);
+        qRail.addAsset(unlockedRail, true);
+        qRail.setAssetWithdrawable(rail, true);
+        qRail.setHasAllocator(true);
+        qRail.revokeRole(qRail.ASSET_MANAGER_ROLE(), address(this));
+        qRail.revokeRole(qRail.ALLOCATOR_MANAGER_ROLE(), address(this));
+        qRail.revokeRole(qRail.PROVIDER_MANAGER_ROLE(), address(this));
     }
 }
 
