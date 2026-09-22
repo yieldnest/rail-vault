@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Script} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 import {IValidator} from "@yieldnest-vault/interface/IValidator.sol";
@@ -20,7 +21,7 @@ import {IRailgunGovernorRewards} from "../src/railgun/IRailgunGovernorRewards.so
 import {IRailgunStaking} from "../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../src/railgun/RailStakePositionManager.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
-import {RailWithdrawalResolver} from "../src/withdrawals/RailWithdrawalResolver.sol";
+import {SingleAssetFIFOResolver} from "../src/withdrawals/SingleAssetFIFOResolver.sol";
 
 contract DeployStakedRail is Script {
     struct Config {
@@ -40,7 +41,7 @@ contract DeployStakedRail is Script {
         BeaconProxyFactory bagFactory;
         WithdrawalRequest withdrawalRequest;
         BaseWithdrawer withdrawer;
-        RailWithdrawalResolver resolver;
+        SingleAssetFIFOResolver resolver;
         StakedRailProcessor processor;
         QueuedRailProcessor queuedRailProcessor;
         RailRewardsProcessor rewardsProcessor;
@@ -178,8 +179,8 @@ contract DeployStakedRail is Script {
         );
 
         deployed.resolver =
-            new RailWithdrawalResolver(
-                deployed.qRail,
+            new SingleAssetFIFOResolver(
+                IERC4626(address(deployed.qRail)),
                 deployed.withdrawalRequest
             );
 

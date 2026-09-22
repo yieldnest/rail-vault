@@ -107,7 +107,7 @@ Do not build a second withdrawal queue.
 StakedRailStrategy
 QueuedRail (qRAIL)
 RailStakePositionManager
-RailWithdrawalResolver
+SingleAssetFIFOResolver
 ```
 
 Recommended layout:
@@ -120,7 +120,7 @@ src/
 │   ├── IRailgunStaking.sol
 │   └── RailStakePositionManager.sol
 ├── withdrawals/
-│   └── RailWithdrawalResolver.sol
+│   └── SingleAssetFIFOResolver.sol
 └── interface/
 ```
 
@@ -426,18 +426,18 @@ R qRAIL reserved
 The request now has a fixed RAIL entitlement and no longer participates
 in subsequent stRAIL yield or loss.
 
-## RailWithdrawalResolver
+## SingleAssetFIFOResolver
 
 Implement:
 
 ``` solidity
-contract RailWithdrawalResolver
+contract SingleAssetFIFOResolver
 ```
 
 Grant:
 
 ``` text
-WithdrawalRequest.RESOLVER_ROLE -> RailWithdrawalResolver
+WithdrawalRequest.RESOLVER_ROLE -> SingleAssetFIFOResolver
 ```
 
 Responsibilities:
@@ -458,7 +458,7 @@ Bound keeper work with separate calls on separate contracts:
 ``` solidity
 // QueuedRailProcessor
 function claimMaturedPositions(uint256[] calldata stakeIds) external;
-// RailWithdrawalResolver
+// SingleAssetFIFOResolver
 function resolveRequests(uint256 maxRequests) external;
 ```
 
@@ -549,7 +549,7 @@ qRAIL:
 
 WithdrawalRequest:
   existing roles
-  RESOLVER_ROLE -> RailWithdrawalResolver
+  RESOLVER_ROLE -> SingleAssetFIFOResolver
 ```
 
 The resolver module, rather than a normal keeper EOA, should hold
@@ -697,7 +697,7 @@ StakedRailStrategy
 QueuedRail
 IRailgunStaking
 RailStakePositionManager
-RailWithdrawalResolver
+SingleAssetFIFOResolver
 deployment scripts
 mainnet-fork tests
 ```
@@ -716,7 +716,7 @@ stRAIL -> Request NFT -> Bag -> RAIL
 ```
 
 `qRAIL` bridges YieldNest strategy accounting and RAILGUN's asynchronous
-positional exit lifecycle. YieldNest's `BaseWithdrawer` and `RailWithdrawalResolver`
+positional exit lifecycle. YieldNest's `BaseWithdrawer` and `SingleAssetFIFOResolver`
 bridge that internal liquidity state into the existing YieldNest
 withdrawal-request system.
 

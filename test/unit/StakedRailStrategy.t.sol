@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 import {IValidator} from "@yieldnest-vault/interface/IValidator.sol";
@@ -19,7 +20,7 @@ import {QueuedRailProcessor} from "../../src/processors/QueuedRailProcessor.sol"
 import {RailStakePositionManager} from "../../src/railgun/RailStakePositionManager.sol";
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
-import {RailWithdrawalResolver} from "../../src/withdrawals/RailWithdrawalResolver.sol";
+import {SingleAssetFIFOResolver} from "../../src/withdrawals/SingleAssetFIFOResolver.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockRailgunStaking} from "../mocks/MockRailgunStaking.sol";
 
@@ -34,7 +35,7 @@ contract StakedRailStrategyTest is Test {
     BeaconProxyFactory bagFactory;
     WithdrawalRequest requests;
     BaseWithdrawer withdrawer;
-    RailWithdrawalResolver resolver;
+    SingleAssetFIFOResolver resolver;
     QueuedRailProcessor internal queuedRailProcessor;
     StakedRailProcessor processor;
 
@@ -128,7 +129,7 @@ contract StakedRailStrategyTest is Test {
         );
 
         resolver =
-            new RailWithdrawalResolver(qRail, requests);
+            new SingleAssetFIFOResolver(IERC4626(address(qRail)), requests);
         processor =
             new StakedRailProcessor(address(this), strategy, 1000 ether);
 
