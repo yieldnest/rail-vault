@@ -4,12 +4,15 @@ pragma solidity ^0.8.24;
 import {IERC20Metadata as IERC20} from "@yieldnest-vault/Common.sol";
 import {BaseStrategy} from "@yieldnest-vault/strategy/BaseStrategy.sol";
 import {VaultLib} from "@yieldnest-vault/library/VaultLib.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {QueuedRailStrategy} from "./QueuedRailStrategy.sol";
 import {RailProvider} from "./RailProvider.sol";
 import {RailStakePositionManager} from "./RailStakePositionManager.sol";
 
 contract StakedRailStrategy is BaseStrategy {
+    using SafeERC20 for IERC20;
+
     string public constant ST_RAIL_VERSION = "0.1.0";
 
     RailStakePositionManager public positionManager;
@@ -18,14 +21,15 @@ contract StakedRailStrategy is BaseStrategy {
     event PositionManagerSet(address indexed positionManager);
 
     error OnlyProcessorSelfCall();
+    error ZeroQueuedShares();
 
-    function queuePosition() external returns (uint256 principal) {
+    function queuePosition() external returns (uint256 shares) {
         if (msg.sender != address(this)) revert OnlyProcessorSelfCall();
-        principal = positionManager.queuePosition();
-        // TODO: CRITICAL accounting flaw: RAIL donations increase qRAIL's exchange rate,
-        // but this still mints one share per RAIL, diluting existing qRAIL holders.
-        // Before deployment, exclude surplus from valuation or mint at the pre-queue rate.
-        queuedRail.mintQueuedRail(address(this), principal);
+        uint256 principal = positionManager.queuePosition();
+        IERC20 unlockedRail = IERC20(address(positionManager.unlockedRail()));
+        unlockedRail.forceApprove(address(queuedRail), principal);
+        shares = queuedRail.depositAsset(address(unlockedRail), principal, address(this));
+        if (shares == 0) revert ZeroQueuedShares();
     }
 
     function initialize(
@@ -33,16 +37,24 @@ contract StakedRailStrategy is BaseStrategy {
         address rail,
         RailStakePositionManager positionManagerAddress,
         QueuedRailStrategy queuedRailAddress
-    )
-        external
-        initializer
-    {
+    ) external initializer {
         _initialize(admin, "Staked RAIL", "stRAIL", IERC20(rail).decimals(), true, false, true, 0);
         _addAsset(rail, IERC20(rail).decimals(), true);
         _addAsset(address(queuedRailAddress), IERC20(rail).decimals(), false);
+        _addAsset(address(positionManagerAddress.activeRail()), IERC20(rail).decimals(), false);
+        _addAsset(address(positionManagerAddress.unlockedRail()), IERC20(rail).decimals(), false);
         _setAssetWithdrawable(rail, false);
         _setAssetWithdrawable(address(queuedRailAddress), true);
-        VaultLib.setProvider(address(new RailProvider(rail, address(queuedRailAddress))));
+        VaultLib.setProvider(
+            address(
+                new RailProvider(
+                    rail,
+                    address(positionManagerAddress.activeRail()),
+                    address(positionManagerAddress.unlockedRail()),
+                    address(queuedRailAddress)
+                )
+            )
+        );
 
         positionManager = positionManagerAddress;
         queuedRail = queuedRailAddress;
@@ -55,12 +67,5 @@ contract StakedRailStrategy is BaseStrategy {
 
     function _feeOnTotal(uint256, address) public pure override returns (uint256) {
         return 0;
-    }
-
-    function computeTotalAssets() public view override returns (uint256 totalBaseBalance) {
-        totalBaseBalance = super.computeTotalAssets();
-        if (address(positionManager) != address(0)) {
-            totalBaseBalance += positionManager.activePrincipal();
-        }
     }
 }

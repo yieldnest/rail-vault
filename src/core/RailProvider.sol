@@ -10,16 +10,25 @@ contract RailProvider is IProvider {
 
     address public immutable rail;
     address public immutable queuedRail;
+    address public immutable activeRail;
+    address public immutable unlockedRail;
     uint256 public immutable rate;
 
-    constructor(address railAddress, address queuedRailAddress) {
+    constructor(
+        address railAddress,
+        address activeRailAddress,
+        address unlockedRailAddress,
+        address queuedRailAddress
+    ) {
         rail = railAddress;
         queuedRail = queuedRailAddress;
+        activeRail = activeRailAddress;
+        unlockedRail = unlockedRailAddress;
         rate = 10 ** IERC20Metadata(railAddress).decimals();
     }
 
     function getRate(address asset) external view returns (uint256) {
-        if (asset == rail) return rate;
+        if (asset != address(0) && (asset == rail || asset == activeRail || asset == unlockedRail)) return rate;
         if (asset == queuedRail && queuedRail != address(0)) {
             return IERC4626(queuedRail).convertToAssets(10 ** IERC20Metadata(queuedRail).decimals());
         }

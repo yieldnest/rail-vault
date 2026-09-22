@@ -48,14 +48,13 @@ contract StakedRailWithdrawalIntegrationTest is Test {
 
         QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
         StakedRailStrategy strategyImplementation = new StakedRailStrategy();
-        address stakedRailAddress = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         qRail = QueuedRailStrategy(
             payable(
                 address(
                     new TransparentUpgradeableProxy(
                         address(qRailImplementation),
                         makeAddr("qRailProxyAdmin"),
-                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail), manager, stakedRailAddress))
+                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail), manager))
                     )
                 )
             )
@@ -74,9 +73,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
                 )
             )
         );
-
-        assertEq(address(strategy), stakedRailAddress);
-        assertEq(qRail.stakedRail(), address(strategy));
 
         Bag bagImplementation = new Bag();
         BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
@@ -151,6 +147,8 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         manager.grantRole(manager.QUEUER_ROLE(), address(strategy));
         bagFactory.grantRole(bagFactory.CREATOR_ROLE(), address(requests));
         requests.setWithdrawer(address(withdrawer));
+        qRail.grantRole(qRail.ALLOCATOR_ROLE(), address(strategy));
+        qRail.grantRole(qRail.ALLOCATOR_ROLE(), address(withdrawer));
         requests.grantRole(requests.RESOLVER_ROLE(), address(resolver));
         strategy.grantRole(strategy.UNPAUSER_ROLE(), address(this));
         strategy.unpause();
@@ -164,7 +162,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         _deposit(alice, 5000 ether);
 
         assertEq(processor.rebalanceStaking(10), 5);
-        assertEq(manager.activePrincipal(), 5000 ether);
+        assertEq(manager.activeRail().totalSupply(), 5000 ether);
         assertEq(rail.balanceOf(address(strategy)), 0);
 
         vm.startPrank(alice);
@@ -180,8 +178,8 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertEq(qRail.balanceOf(address(requests)), 1500 ether);
         assertEq(qRail.balanceOf(address(strategy)), 500 ether);
         assertEq(requests.ownerOf(requestId), bob);
-        assertEq(manager.activePrincipal(), 3000 ether);
-        assertEq(manager.queuedPrincipal(), 2000 ether);
+        assertEq(manager.activeRail().totalSupply(), 3000 ether);
+        assertEq(manager.unlockedRail().totalSupply(), 2000 ether);
 
         uint256[] memory stakeIds = new uint256[](2);
         stakeIds[0] = 0;
@@ -256,6 +254,50 @@ contract StakedRailWithdrawalIntegrationTest is Test {
             assertEq(resolver.nextRequestToResolve(), id + 1);
         }
         assertEq(qRail.balanceOf(address(requests)), 0);
+    }
+
+    function testQueueAfterDonationDepositsReceiptsAtLiveRate() external {
+        _deposit(alice, 3000 ether);
+        processor.rebalanceStaking(3);
+        vm.startPrank(alice);
+        strategy.approve(address(processor), 1000 ether);
+        processor.exitToQueuedRail(1000 ether, alice, 1);
+        vm.stopPrank();
+
+        deal(address(rail), bob, 500 ether);
+        vm.prank(bob);
+        assertTrue(rail.transfer(address(qRail), 500 ether));
+        uint256 holderAssets = qRail.convertToAssets(qRail.balanceOf(alice));
+        uint256 expectedShares = qRail.previewDepositAsset(address(manager.unlockedRail()), 1000 ether);
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(strategy);
+        data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, ());
+        vm.prank(address(processor));
+        strategy.processor(targets, values, data);
+        assertEq(qRail.balanceOf(address(strategy)), expectedShares);
+        assertLt(expectedShares, 1000 ether);
+        assertGe(qRail.convertToAssets(qRail.balanceOf(alice)), holderAssets);
+        assertEq(qRail.totalAssets(), 2500 ether);
+        assertEq(manager.unlockedRail().balanceOf(address(qRail)), 2000 ether);
+
+        vm.startPrank(alice);
+        qRail.approve(address(requests), 1000 ether);
+        uint256 id = requests.requestWithdrawal(1000 ether, alice, "");
+        vm.stopPrank();
+        vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 0;
+        ids[1] = 1;
+        queuedRailProcessor.claimMaturedPositions(ids);
+        assertEq(manager.unlockedRail().totalSupply(), 0);
+        assertEq(qRail.totalAssets(), 2500 ether);
+        uint256 payout = qRail.previewRedeem(1000 ether);
+        assertGe(payout, holderAssets);
+        assertEq(resolver.resolveRequests(1), 1);
+        assertEq(requests.requests(id).amountLocked, 0);
+        assertEq(rail.balanceOf(requests.requests(id).bag), payout);
     }
 
     function _deposit(address account, uint256 amount) internal {

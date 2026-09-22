@@ -76,6 +76,8 @@ contract DeployStakedRail is Script {
         string memory json = "staked-rail";
         vm.serializeAddress(json, "qRail", address(deployed.qRail));
         vm.serializeAddress(json, "positionManager", address(deployed.manager));
+        vm.serializeAddress(json, "activeRail", address(deployed.manager.activeRail()));
+        vm.serializeAddress(json, "unlockedRail", address(deployed.manager.unlockedRail()));
         vm.serializeAddress(json, "bagFactory", address(deployed.bagFactory));
         vm.serializeAddress(json, "withdrawalRequest", address(deployed.withdrawalRequest));
         vm.serializeAddress(json, "withdrawer", address(deployed.withdrawer));
@@ -93,8 +95,6 @@ contract DeployStakedRail is Script {
 
         QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
         StakedRailStrategy strategyImplementation = new StakedRailStrategy();
-        // The next two broadcaster deployments are qRAIL and stRAIL, both initialized at creation.
-        address stakedRailAddress = vm.computeCreateAddress(config.admin, vm.getNonce(config.admin) + 1);
         deployed.qRail = QueuedRailStrategy(
             payable(
                 address(
@@ -103,7 +103,7 @@ contract DeployStakedRail is Script {
                         config.admin,
                         abi.encodeCall(
                             QueuedRailStrategy.initialize,
-                            (config.admin, config.rail, deployed.manager, stakedRailAddress)
+                            (config.admin, config.rail, deployed.manager)
                         )
                     )
                 )
@@ -124,8 +124,6 @@ contract DeployStakedRail is Script {
                 )
             )
         );
-
-        require(address(deployed.strategy) == stakedRailAddress, "Unexpected stRAIL address");
 
         Bag bagImplementation = new Bag();
         BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
@@ -220,6 +218,8 @@ contract DeployStakedRail is Script {
         deployed.manager.grantRole(deployed.manager.KEEPER_ROLE(), address(deployed.rewardsProcessor));
         deployed.bagFactory.grantRole(deployed.bagFactory.CREATOR_ROLE(), address(deployed.withdrawalRequest));
         deployed.withdrawalRequest.setWithdrawer(address(deployed.withdrawer));
+        deployed.qRail.grantRole(deployed.qRail.ALLOCATOR_ROLE(), address(deployed.strategy));
+        deployed.qRail.grantRole(deployed.qRail.ALLOCATOR_ROLE(), address(deployed.withdrawer));
         deployed.withdrawalRequest.grantRole(deployed.withdrawalRequest.RESOLVER_ROLE(), address(deployed.resolver));
     }
 

@@ -23,13 +23,17 @@ RAIL -> stRAIL
           |
           +-> idle RAIL
           |
-          +-> RAILGUN stake chunks / stakeIDs
+          +-> ActiveRail / RAILGUN stake chunks
                     |
                     | queue whole positions
                     v
              RailStakePositionManager
                     |
-                    | mint 1:1 queued principal
+                    | burn ActiveRail, mint UnlockedRail 1:1
+                    v
+                UnlockedRail
+                    |
+                    | deposit at live qRAIL rate
                     v
                   qRAIL
                     |
@@ -118,6 +122,7 @@ src/
 │   ├── StakedRailStrategy.sol
 │   ├── QueuedRailStrategy.sol
 │   ├── RailProvider.sol
+│   ├── RailReceiptToken.sol
 │   └── RailStakePositionManager.sol
 ├── railgun/
 │   ├── IRailgunStaking.sol
@@ -154,30 +159,21 @@ position logic.
 Every unit of economically owned RAIL must be counted exactly once.
 
 ``` text
-totalAssets =
-    idleRAIL
-  + activePrincipal
-  + queuedPrincipal
+stRAIL assets = idleRAIL + ActiveRail balance + UnlockedRail balance
+             + value of qRAIL held
+qRAIL assets = idleRAIL + UnlockedRail balance
 ```
 
-Prefer:
+Both vaults use inherited balance-based accounting, without total-assets
+overrides. ActiveRail and UnlockedRail are transferable OZ ERC20 receipts,
+valued at one RAIL per unit. Only the manager may mint or burn them.
+Their total supplies equal active and queued principal respectively; no
+separate principal counters are stored.
 
-``` solidity
-totalAssets =
-    RAIL.balanceOf(address(this))
-    + positionManager.activePrincipal()
-    + positionManager.queuedPrincipal();
-```
-
-When a stake transitions from ACTIVE to UNSTAKING:
-
-``` text
-activePrincipal -= X
-queuedPrincipal += X
-```
-
-Never count both the active stake and its qRAIL representation
-simultaneously.
+qRAIL is a vault share, not a fixed-rate receipt. RAIL donations increase
+its exchange rate. Depositing UnlockedRail through `depositAsset` issues
+shares at the current rate rather than minting principal-for-shares.
+Only receipts held by a vault contribute to that vault's assets.
 
 ## Disable Direct Withdrawals
 
@@ -215,11 +211,11 @@ chunks.
 
 ## RailStakePositionManager
 
-Maintain:
+Expose the two receipts:
 
 ``` solidity
-uint256 public activePrincipal;
-uint256 public queuedPrincipal;
+RailReceiptToken public immutable activeRail;
+RailReceiptToken public immutable unlockedRail;
 ```
 
 Responsibilities:
@@ -228,9 +224,10 @@ Responsibilities:
 -   create/register stakes;
 -   initiate unstaking;
 -   derive position state from RAILGUN's locktime and claimedTime;
--   mint qRAIL after successful queueing;
+-   mint ActiveRail to the creator after staking;
+-   burn the queuer's ActiveRail and mint UnlockedRail after successful queueing;
 -   claim matured positions;
--   burn/reconcile qRAIL;
+-   burn the claimer's UnlockedRail when claiming principal;
 -   return RAIL to the exit system.
 
 Derived lifecycle (not stored locally):
@@ -243,48 +240,45 @@ Use actual deployed RAILGUN state wherever possible rather than
 duplicating timing assumptions.
 Separate active-position and claimable-position checks read the principal,
 locktime, and claimedTime directly from RAILGUN. No per-position metadata
-is stored locally; only the active stake-ID list and aggregate principal
-totals are maintained. Keepers discover queued IDs from `PositionQueued`
+is stored locally; the active stake-ID list is maintained and receipt
+supplies represent aggregate principal. Keepers discover queued IDs from `PositionQueued`
 events and supply them when claiming. Claimed stakes are rejected first; claims require
 a nonzero locktime strictly less than the current timestamp. Nonexistent
 stake IDs revert in RAILGUN's stake lookup.
 
 ## qRAIL
 
-`qRAIL` is an ERC20 representation of queued RAIL principal.
+`qRAIL` is a YieldNest `BaseStrategy` share backed by UnlockedRail and
+liquid RAIL. Its inherited conversions determine the live exchange rate.
 
 ``` text
 Name: Queued RAIL
 Symbol: qRAIL
 Decimals: same as RAIL
-1 qRAIL = claim on 1 RAIL principal
+Initial exchange rate: 1 qRAIL = 1 RAIL
+Donations can increase this rate.
 ```
 
-Recommended:
-
-``` solidity
-contract QueuedRail is ERC20, AccessControl
-```
-
-Roles:
+Asset configuration:
 
 ``` text
-MINTER_ROLE -> RailStakePositionManager
-BURNER_ROLE -> PositionManager / authorized exit component
+RAIL: base asset, deposits disabled, withdrawals enabled
+UnlockedRail: deposits enabled, withdrawals disabled, provider rate 1:1
 ```
 
-qRAIL may only be minted after an actual RAILGUN position successfully
-enters unstaking.
+New qRAIL shares are issued by the inherited deposit path in exchange for
+UnlockedRail, not by a privileged mint method. stRAIL rejects a queue/deposit
+that would mint zero shares. This does not eliminate ordinary vault rounding
+or donation-driven exchange-rate changes.
 
-Backing invariant:
+qRAIL enables allocator checks. Only stRAIL and the configured
+`BaseWithdrawer` receive `ALLOCATOR_ROLE`: stRAIL deposits receipts and the
+withdrawer settles RAIL into Bags. Holding qRAIL does not permit direct
+redemption without this role. Transfers, approvals and processor calls are
+unaffected.
 
-``` text
-qRAIL.totalSupply()
-<= queued/claimable principal
- + RAIL explicitly escrowed as qRAIL backing
-```
-
-Prefer exact equality outside atomic transitions.
+The manager burns UnlockedRail on claim and transfers the matching RAIL
+into qRAIL. This changes the composition of backing, not its total value.
 
 ## Queueing a Stake
 
@@ -292,7 +286,7 @@ Prefer exact equality outside atomic transitions.
 function queuePosition()
     external
     onlyRole(QUEUER_ROLE)
-    returns (uint256 qRailMinted);
+    returns (uint256 principal);
 ```
 
 The manager's `QUEUER_ROLE` belongs to stRAIL. `StakedRailProcessor` invokes
@@ -309,17 +303,18 @@ Required ordering within that instruction:
 1.  Pop the oldest active stake ID (revert if empty).
 2.  Verify the stake is ACTIVE.
 3.  Determine its principal.
-4.  Successfully initiate external unstaking.
-5.  Decrease `activePrincipal`.
-6.  Increase `queuedPrincipal`.
-7.  stRAIL calls qRAIL to mint the same principal to itself.
+4.  Burn that amount of ActiveRail from the caller.
+5.  Successfully initiate external unstaking.
+6.  Mint the same amount of UnlockedRail to the caller.
+7.  stRAIL approves and deposits UnlockedRail into qRAIL, receiving shares
+    at the current exchange rate.
 
-The external unstake must succeed before qRAIL is minted. A position
-cannot mint qRAIL twice. Mint failure reverts the queue pop, unlock and accounting
-updates. qRAIL accepts minting only from its `stakedRail` address,
-configured in qRAIL's initializer. Deployment precomputes the stRAIL proxy
-address from the broadcaster's CREATE nonce, then initializes both proxies
-in their constructors without exposing an uninitialized proxy.
+The entire instruction is atomic. Deposit failure reverts the queue pop,
+unlock and receipt transitions. There is no privileged qRAIL mint function
+or circular deployment dependency. Each proxy is initialized in its constructor.
+When claiming, the manager burns UnlockedRail from the caller and transfers
+the claimed RAIL to the receiver. The qRAIL processor rules restrict that
+receiver to qRAIL, replacing receipt backing with liquid RAIL atomically.
 
 ## User Withdrawal Requests
 
@@ -483,7 +478,7 @@ manager for the chunk amount, then call `createPosition(amount)`. The
 manager pulls RAIL from its caller with `safeTransferFrom` before staking;
 it does not use any pre-existing manager balance to fund the position.
 
-`StakedRailProcessor` invokes stRAIL's atomic queue-and-mint instruction for
+`StakedRailProcessor` invokes stRAIL's atomic queue-and-deposit instruction for
 complete stake positions. It then redeems the user's stRAIL shares
 for qRAIL, which the user can submit to the withdrawal queue.
 
@@ -550,7 +545,11 @@ stRAIL:
 qRAIL:
   DEFAULT_ADMIN_ROLE
   PROCESSOR_ROLE -> QueuedRailProcessor
-  mintQueuedRail -> only stakedRail (set once)
+  ALLOCATOR_ROLE -> StakedRailStrategy, BaseWithdrawer
+  deposits -> UnlockedRail only, via inherited depositAsset
+
+ActiveRail / UnlockedRail:
+  mint / burn -> RailStakePositionManager only
 
 WithdrawalRequest:
   existing roles
@@ -626,12 +625,13 @@ re-entry mechanism is designed.
 
 Invariant tests must cover:
 
-1.  qRAIL supply never exceeds queued backing.
+1.  ActiveRail supply equals active principal; UnlockedRail supply equals
+    unclaimed queued principal. qRAIL accounts only for receipts and RAIL it holds.
 2.  Reserved qRAIL never exceeds qRAIL controlled by the exit system.
 3.  Active plus queued principal reconciles to external non-claimed
     positions.
 4.  A position cannot be ACTIVE and UNSTAKING simultaneously.
-5.  A stake ID cannot mint qRAIL twice.
+5.  A stake ID cannot mint UnlockedRail twice or be claimed twice.
 6.  A stake ID cannot be claimed twice.
 7.  Every allocated request's RAIL entitlement equals its reservation.
 8.  stRAIL shares are consumed exactly once.
@@ -672,16 +672,16 @@ The next external chunk is 25,000 RAIL. The keeper queues that complete
 position:
 
 ``` text
-activePrincipal -= 25,000
-queuedPrincipal += 25,000
-qRAIL minted     = 25,000
+ActiveRail burned  = 25,000
+UnlockedRail minted and deposited into qRAIL = 25,000
+qRAIL minted = deposit preview (25,000 only at a 1:1 exchange rate)
 ```
 
 Alice receives a 10,000 qRAIL reservation. The remaining 15,000 qRAIL
 stays unreserved for later requests.
 
-When the position matures, 25,000 RAIL is claimed and the corresponding
-qRAIL backing is reconciled/burned. Alice's 10,000 RAIL becomes reserved
+When the position matures, 25,000 UnlockedRail held by qRAIL is burned and
+25,000 RAIL is claimed into qRAIL. Alice's 10,000 RAIL becomes reserved
 final liquidity. The resolver settles her request into its Bag, and the
 request NFT owner claims 10,000 RAIL.
 

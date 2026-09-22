@@ -12,37 +12,21 @@ contract QueuedRailStrategy is BaseStrategy {
     string public constant Q_RAIL_VERSION = "0.1.0";
 
     RailStakePositionManager public positionManager;
-    address public stakedRail;
 
-    error OnlyStakedRail();
-    error InvalidStakedRail();
-
-    function mintQueuedRail(address receiver, uint256 shares) external {
-        if (msg.sender != stakedRail) revert OnlyStakedRail();
-        _mint(receiver, shares);
-    }
-
-    function initialize(
-        address admin,
-        address rail,
-        RailStakePositionManager positionManagerAddress,
-        address stakedRailAddress
-    ) external initializer {
-        if (stakedRailAddress == address(0)) revert InvalidStakedRail();
-        stakedRail = stakedRailAddress;
+    function initialize(address admin, address rail, RailStakePositionManager positionManagerAddress)
+        external
+        initializer
+    {
         _initialize(admin, "Queued RAIL", "qRAIL", IERC20(rail).decimals(), false, false, true, 0);
+        _setHasAllocator(true);
         _addAsset(rail, IERC20(rail).decimals(), false);
+        _addAsset(address(positionManagerAddress.unlockedRail()), IERC20(rail).decimals(), true);
         _setAssetWithdrawable(rail, true);
-        VaultLib.setProvider(address(new RailProvider(rail, address(0))));
+        VaultLib.setProvider(
+            address(new RailProvider(rail, address(0), address(positionManagerAddress.unlockedRail()), address(0)))
+        );
 
         positionManager = positionManagerAddress;
-    }
-
-    function computeTotalAssets() public view override returns (uint256 totalBaseBalance) {
-        totalBaseBalance = super.computeTotalAssets();
-        if (address(positionManager) != address(0)) {
-            totalBaseBalance += positionManager.queuedPrincipal();
-        }
     }
 
     function _feeOnRaw(uint256, address) public pure override returns (uint256) {

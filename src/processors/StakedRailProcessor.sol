@@ -68,36 +68,31 @@ contract StakedRailProcessor is AccessControl {
         if (shares == 0) revert ZeroShares();
         if (receiver == address(0)) revert ZeroAddress();
 
-        assets = stRail.previewRedeemAsset(address(qRail), shares);
-        _fillQueuedRail(assets, maxPositions);
+        _fillQueuedRail(shares, maxPositions);
         assets = stRail.redeemAsset(address(qRail), shares, receiver, msg.sender);
     }
 
-    function _fillQueuedRail(uint256 requiredAssets, uint256 maxPositions) internal {
-        uint256 available = IERC20(address(qRail)).balanceOf(address(stRail));
-        if (available >= requiredAssets) return;
-
-        uint256 needed = requiredAssets - available;
-        uint256 queued;
+    function _fillQueuedRail(uint256 shares, uint256 maxPositions) internal {
         uint256 positionsQueued;
-        while (positionManager.activePositionCount() != 0 && positionsQueued < maxPositions) {
-            uint256 queuedPrincipal = _queuePosition();
-            queued += queuedPrincipal;
+        while (true) {
+            uint256 requiredAssets = stRail.previewRedeemAsset(address(qRail), shares);
+            uint256 available = qRail.balanceOf(address(stRail));
+            if (available >= requiredAssets) return;
+            if (positionManager.activePositionCount() == 0 || positionsQueued == maxPositions) {
+                revert InsufficientQueuedRail(requiredAssets, available);
+            }
+            _queuePosition();
             positionsQueued++;
-            if (queued >= needed) return;
         }
-
-        revert InsufficientQueuedRail(requiredAssets, available + queued);
     }
 
-    function _queuePosition() internal returns (uint256) {
+    function _queuePosition() internal {
         address[] memory targets = new address[](1);
         uint256[] memory values = new uint256[](1);
         bytes[] memory data = new bytes[](1);
         targets[0] = address(stRail);
         data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, ());
-        bytes[] memory results = stRail.processor(targets, values, data);
-        return abi.decode(results[0], (uint256));
+        stRail.processor(targets, values, data);
     }
 
     error ZeroAddress();

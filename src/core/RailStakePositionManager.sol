@@ -4,11 +4,13 @@ pragma solidity ^0.8.24;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IRailgunGovernorRewards} from "../railgun/IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "../railgun/IRailgunStaking.sol";
 import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
+import {RailReceiptToken} from "./RailReceiptToken.sol";
 
 contract RailStakePositionManager is AccessControl, Pausable {
     using SafeERC20 for IERC20;
@@ -26,8 +28,8 @@ contract RailStakePositionManager is AccessControl, Pausable {
     IRailgunStaking public immutable staking;
 
     DoubleEndedQueue.Bytes32Deque private activeStakes;
-    uint256 public activePrincipal;
-    uint256 public queuedPrincipal;
+    RailReceiptToken public immutable activeRail;
+    RailReceiptToken public immutable unlockedRail;
 
     event PositionCreated(uint256 indexed stakeId, uint256 principal);
     event PositionQueued(uint256 indexed stakeId, uint256 principal, uint256 locktime);
@@ -37,6 +39,9 @@ contract RailStakePositionManager is AccessControl, Pausable {
     constructor(address admin, IERC20 railToken, IRailgunStaking stakingContract) {
         rail = railToken;
         staking = stakingContract;
+        uint8 decimals = IERC20Metadata(address(railToken)).decimals();
+        activeRail = new RailReceiptToken("Active RAIL", "aRAIL", decimals);
+        unlockedRail = new RailReceiptToken("Unlocked RAIL", "uRAIL", decimals);
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
@@ -45,20 +50,20 @@ contract RailStakePositionManager is AccessControl, Pausable {
         rail.forceApprove(address(staking), amount);
         stakeId = staking.stake(amount);
         activeStakes.pushBack(bytes32(stakeId));
-        activePrincipal += amount;
+        activeRail.mint(msg.sender, amount);
         emit PositionCreated(stakeId, amount);
     }
 
-    function queuePosition() external onlyRole(QUEUER_ROLE) whenNotPaused returns (uint256 qRailMinted) {
+    function queuePosition() external onlyRole(QUEUER_ROLE) whenNotPaused returns (uint256) {
         uint256 stakeId = uint256(activeStakes.popFront());
         (uint256 principal, uint256 locktime, uint256 claimedTime) = _readPosition(stakeId);
         if (!isActivePosition(locktime, claimedTime)) revert InvalidPositionStatus();
 
+        activeRail.burn(msg.sender, principal);
         staking.unlock(stakeId);
         (,,, locktime,) = staking.stakes(address(this), stakeId);
 
-        activePrincipal -= principal;
-        queuedPrincipal += principal;
+        unlockedRail.mint(msg.sender, principal);
         emit PositionQueued(stakeId, principal, locktime);
         return principal;
     }
@@ -75,8 +80,8 @@ contract RailStakePositionManager is AccessControl, Pausable {
         if (!isQueuedPosition(locktime, claimedTime)) revert InvalidPositionStatus();
         if (!isClaimablePosition(locktime, claimedTime)) revert PositionNotMatured();
 
+        unlockedRail.burn(msg.sender, amount);
         staking.claim(stakeId);
-        queuedPrincipal -= amount;
         rail.safeTransfer(receiver, amount);
 
         emit PositionClaimed(stakeId, amount, receiver);

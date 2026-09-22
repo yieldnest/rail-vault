@@ -52,8 +52,8 @@ contract RailStakePositionManagerIntegrationTest is Test {
         uint256 amount = 1000 ether;
         uint256 stakeId = _create(amount);
 
-        assertEq(manager.activePrincipal(), amount);
-        assertEq(manager.queuedPrincipal(), 0);
+        assertEq(manager.activeRail().totalSupply(), amount);
+        assertEq(manager.unlockedRail().totalSupply(), 0);
         assertEq(manager.activePositionCount(), 1);
 
         (, uint256 principal,, uint256 locktime, uint256 claimedTime) = staking.stakes(address(manager), stakeId);
@@ -78,8 +78,8 @@ contract RailStakePositionManagerIntegrationTest is Test {
         uint256 queued = manager.queuePosition();
 
         assertEq(queued, amount);
-        assertEq(manager.activePrincipal(), 0);
-        assertEq(manager.queuedPrincipal(), amount);
+        assertEq(manager.activeRail().totalSupply(), 0);
+        assertEq(manager.unlockedRail().totalSupply(), amount);
         assertEq(manager.activePositionCount(), 0);
 
         (,,, uint256 locktime, uint256 claimedTime) = staking.stakes(address(manager), stakeId);
@@ -119,13 +119,52 @@ contract RailStakePositionManagerIntegrationTest is Test {
         uint256 claimed = manager.claimPosition(stakeId, receiver);
 
         assertEq(claimed, amount);
-        assertEq(manager.activePrincipal(), 0);
-        assertEq(manager.queuedPrincipal(), 0);
+        assertEq(manager.activeRail().totalSupply(), 0);
+        assertEq(manager.unlockedRail().totalSupply(), 0);
         assertEq(manager.activePositionCount(), 0);
         assertEq(rail.balanceOf(receiver), amount);
 
         (,,,, uint256 claimedTime) = staking.stakes(address(manager), stakeId);
         assertEq(claimedTime, block.timestamp);
+        _assertAccounting();
+    }
+
+    function testQueueRequiresCallerActiveReceiptsAndRollsBack() external {
+        uint256 id = _create(1000 ether);
+        IERC20 activeRail = IERC20(address(manager.activeRail()));
+        vm.prank(keeper);
+        assertTrue(activeRail.transfer(strategy, 1000 ether));
+        vm.expectRevert(abi.encodeWithSignature("ERC20InsufficientBalance(address,uint256,uint256)", keeper, 0, 1000 ether));
+        vm.prank(keeper);
+        manager.queuePosition();
+        assertEq(manager.activeStakeHead(), id);
+        (,,, uint256 locktime,) = staking.stakes(address(manager), id);
+        assertEq(locktime, 0);
+        assertEq(activeRail.totalSupply(), 1000 ether);
+        assertEq(manager.unlockedRail().totalSupply(), 0);
+        vm.prank(strategy);
+        assertTrue(activeRail.transfer(keeper, 1000 ether));
+        _queue(id);
+        _assertAccounting();
+    }
+
+    function testClaimRequiresCallerUnlockedReceiptsAndRollsBack() external {
+        uint256 id = _create(1000 ether);
+        _queue(id);
+        vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
+        IERC20 unlockedRail = IERC20(address(manager.unlockedRail()));
+        vm.prank(keeper);
+        assertTrue(unlockedRail.transfer(strategy, 1000 ether));
+        vm.expectRevert(abi.encodeWithSignature("ERC20InsufficientBalance(address,uint256,uint256)", keeper, 0, 1000 ether));
+        vm.prank(keeper);
+        manager.claimPosition(id, receiver);
+        (,,,, uint256 claimedTime) = staking.stakes(address(manager), id);
+        assertEq(claimedTime, 0);
+        assertEq(unlockedRail.totalSupply(), 1000 ether);
+        assertEq(rail.balanceOf(receiver), 0);
+        vm.prank(strategy);
+        assertTrue(unlockedRail.transfer(keeper, 1000 ether));
+        _claim(id);
         _assertAccounting();
     }
 
@@ -190,7 +229,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _claim(0);
         _assertAccounting();
         assertEq(manager.activeStakeIdsList()[0], 2);
-        assertEq(manager.activePrincipal(), 400 ether);
+        assertEq(manager.activeRail().totalSupply(), 400 ether);
         assertEq(rail.balanceOf(receiver), 3300 ether);
     }
 
@@ -304,7 +343,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
         funded = 123 ether;
         _create(1000 ether);
         assertEq(rail.balanceOf(address(manager)), 123 ether);
-        assertEq(manager.activePrincipal(), 1000 ether);
+        assertEq(manager.activeRail().totalSupply(), 1000 ether);
         _assertAccounting();
     }
 
@@ -336,7 +375,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
         manager.claimPosition(0, receiver);
         (,,,, uint256 claimedTime) = staking.stakes(address(manager), 0);
         assertEq(claimedTime, 0);
-        assertEq(manager.queuedPrincipal(), 1000 ether);
+        assertEq(manager.unlockedRail().totalSupply(), 1000 ether);
         _assertAccounting();
         manager.unpause();
         _claim(0);
@@ -358,7 +397,7 @@ contract RailStakePositionManagerIntegrationTest is Test {
             (,,,, uint256 claimedTime) = staking.stakes(address(manager), ids[i]);
             assertEq(claimedTime, 0);
         }
-        assertEq(manager.queuedPrincipal(), 3000 ether);
+        assertEq(manager.unlockedRail().totalSupply(), 3000 ether);
         _assertAccounting();
         manager.unpause();
         vm.prank(keeper);
@@ -394,8 +433,14 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _expectRole(outsider, manager.DEFAULT_ADMIN_ROLE());
         manager.grantRole(creatorRole, outsider);
 
+        IERC20 activeRail = IERC20(address(manager.activeRail()));
+        vm.prank(keeper);
+        assertTrue(activeRail.transfer(queuer, 1000 ether));
         vm.prank(queuer);
         manager.queuePosition();
+        IERC20 unlockedRail = IERC20(address(manager.unlockedRail()));
+        vm.prank(queuer);
+        assertTrue(unlockedRail.transfer(claimer, 1000 ether));
         vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
         _expectRole(keeper, manager.CLAIMER_ROLE());
         manager.claimPosition(0, receiver);
@@ -528,8 +573,8 @@ contract RailStakePositionManagerIntegrationTest is Test {
                     _assertAccounting();
                 }
             }
-            assertGt(manager.activePrincipal(), 0);
-            assertGt(manager.queuedPrincipal(), 0);
+            assertGt(manager.activeRail().totalSupply(), 0);
+            assertGt(manager.unlockedRail().totalSupply(), 0);
             vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
         }
         while (manager.activePositionCount() != 0) {
@@ -545,8 +590,8 @@ contract RailStakePositionManagerIntegrationTest is Test {
             }
         }
         assertEq(manager.activePositionCount(), 0);
-        assertEq(manager.activePrincipal(), 0);
-        assertEq(manager.queuedPrincipal(), 0);
+        assertEq(manager.activeRail().totalSupply(), 0);
+        assertEq(manager.unlockedRail().totalSupply(), 0);
         assertEq(rail.balanceOf(receiver), funded);
     }
 
@@ -643,8 +688,8 @@ contract RailStakePositionManagerIntegrationTest is Test {
             _queue(id);
             _assertAccounting();
         }
-        assertEq(manager.activePrincipal(), 0);
-        assertEq(manager.queuedPrincipal(), 6000 ether);
+        assertEq(manager.activeRail().totalSupply(), 0);
+        assertEq(manager.unlockedRail().totalSupply(), 6000 ether);
     }
 
     function testQueuePositionPreservesOrderWhenNewStakesAppend() external {
@@ -766,6 +811,9 @@ contract RailStakePositionManagerIntegrationTest is Test {
         rail.approve(address(manager), amount);
         vm.prank(strategy);
         id = manager.createPosition(amount);
+        IERC20 activeRail = IERC20(address(manager.activeRail()));
+        vm.prank(strategy);
+        assertTrue(activeRail.transfer(keeper, amount));
         assertEq(rail.balanceOf(strategy), callerBalance);
         assertEq(rail.balanceOf(address(manager)), managerBalance);
         assertEq(rail.allowance(strategy, address(manager)), 0);
@@ -864,8 +912,10 @@ contract RailStakePositionManagerIntegrationTest is Test {
                 assertTrue(seen[i], "missing active ID");
             }
         }
-        assertEq(manager.activePrincipal(), active);
-        assertEq(manager.queuedPrincipal(), queued);
+        assertEq(manager.activeRail().totalSupply(), active);
+        assertEq(manager.unlockedRail().totalSupply(), queued);
+        assertEq(manager.activeRail().balanceOf(keeper), active);
+        assertEq(manager.unlockedRail().balanceOf(keeper), queued);
         assertEq(rail.balanceOf(receiver), claimed);
         assertEq(active + queued + claimed + rail.balanceOf(address(manager)), funded);
         assertEq(_globalStaked(), initialGlobalStaked + active + queued);
