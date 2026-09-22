@@ -159,7 +159,7 @@ position logic.
 Every unit of economically owned RAIL must be counted exactly once.
 
 ``` text
-stRAIL assets = idleRAIL + ActiveRail balance + UnlockedRail balance
+stRAIL assets = idleRAIL + ActiveRail balance
              + value of qRAIL held
 qRAIL assets = idleRAIL + UnlockedRail balance
 ```
@@ -174,6 +174,8 @@ qRAIL is a vault share, not a fixed-rate receipt. RAIL donations increase
 its exchange rate. Depositing UnlockedRail through `depositAsset` issues
 shares at the current rate rather than minting principal-for-shares.
 Only receipts held by a vault contribute to that vault's assets.
+UnlockedRail is accounted for only in qRAIL; stRAIL holds it transiently
+during the atomic queue-and-deposit operation, not as a registered asset.
 
 ## Disable Direct Withdrawals
 

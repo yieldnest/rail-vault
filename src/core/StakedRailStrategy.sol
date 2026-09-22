@@ -42,15 +42,13 @@ contract StakedRailStrategy is BaseStrategy {
         _addAsset(rail, IERC20(rail).decimals(), true);
         _addAsset(address(queuedRailAddress), IERC20(rail).decimals(), false);
         _addAsset(address(positionManagerAddress.activeRail()), IERC20(rail).decimals(), false);
-        _addAsset(address(positionManagerAddress.unlockedRail()), IERC20(rail).decimals(), false);
-        _setAssetWithdrawable(rail, false);
         _setAssetWithdrawable(address(queuedRailAddress), true);
         VaultLib.setProvider(
             address(
                 new RailProvider(
                     rail,
                     address(positionManagerAddress.activeRail()),
-                    address(positionManagerAddress.unlockedRail()),
+                    address(0),
                     address(queuedRailAddress)
                 )
             )

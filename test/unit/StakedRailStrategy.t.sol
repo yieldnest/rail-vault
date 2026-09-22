@@ -285,7 +285,7 @@ contract StakedRailStrategyTest is Test {
         IERC20 unlockedRail = IERC20(address(manager.unlockedRail()));
         vm.prank(user);
         assertTrue(unlockedRail.transfer(address(strategy), 1000 ether));
-        assertEq(strategy.totalAssets(), 1000 ether);
+        assertEq(strategy.totalAssets(), 0);
         vm.startPrank(address(strategy));
         unlockedRail.approve(address(qRail), 1000 ether);
         assertEq(qRail.depositAsset(address(unlockedRail), 1000 ether, address(strategy)), 1000 ether);
