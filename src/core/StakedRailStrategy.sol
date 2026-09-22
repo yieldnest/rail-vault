@@ -22,6 +22,9 @@ contract StakedRailStrategy is BaseStrategy {
     function queuePosition() external returns (uint256 principal) {
         if (msg.sender != address(this)) revert OnlyProcessorSelfCall();
         principal = positionManager.queuePosition();
+        // TODO: CRITICAL accounting flaw: RAIL donations increase qRAIL's exchange rate,
+        // but this still mints one share per RAIL, diluting existing qRAIL holders.
+        // Before deployment, exclude surplus from valuation or mint at the pre-queue rate.
         queuedRail.mintQueuedRail(address(this), principal);
     }
 
