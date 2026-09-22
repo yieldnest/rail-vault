@@ -89,7 +89,16 @@ contract RailStrategyDeployer {
                         settings.admin,
                         abi.encodeCall(
                             QueuedRailStrategy.initialize,
-                            (address(this), IERC20Metadata(settings.rail).decimals())
+                            (
+                                address(this),
+                                "Queued RAIL",
+                                "qRAIL",
+                                IERC20Metadata(settings.rail).decimals(),
+                                false,
+                                false,
+                                true,
+                                0
+                            )
                         )
                     )
                 ))

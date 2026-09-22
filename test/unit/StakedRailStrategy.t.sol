@@ -56,7 +56,7 @@ contract StakedRailStrategyTest is Test {
                     new TransparentUpgradeableProxy(
                         address(qRailImplementation),
                         makeAddr("qRailProxyAdmin"),
-                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), rail.decimals()))
+                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), "Queued RAIL", "qRAIL", rail.decimals(), false, false, true, 0))
                     )
                 )
             )
@@ -478,11 +478,28 @@ contract StakedRailStrategyTest is Test {
 
     function testQueuedRailCannotBeReinitialized() external {
         vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
-        qRail.initialize(address(this), 18);
+        qRail.initialize(address(this), "Queued RAIL", "qRAIL", 18, false, false, true, 0);
         vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
         vm.prank(user);
-        qRail.initialize(user, 18);
+        qRail.initialize(user, "Queued RAIL", "qRAIL", 18, false, false, true, 0);
         assertTrue(qRail.getAsset(address(manager.unlockedRail())).active);
+    }
+
+    function testQueuedRailInitializerForwardsAllParameters() external {
+        QueuedRailStrategy implementation = new QueuedRailStrategy();
+        QueuedRailStrategy configured = QueuedRailStrategy(payable(address(new TransparentUpgradeableProxy(
+            address(implementation), address(this),
+            abi.encodeCall(QueuedRailStrategy.initialize, (user, "Custom Queue", "CUSTOM", 6, true, true, false, 1))
+        ))));
+        assertTrue(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), user));
+        assertFalse(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), address(this)));
+        assertEq(configured.name(), "Custom Queue");
+        assertEq(configured.symbol(), "CUSTOM");
+        assertEq(configured.decimals(), 6);
+        assertTrue(configured.paused());
+        assertTrue(configured.countNativeAsset());
+        assertFalse(configured.alwaysComputeTotalAssets());
+        assertEq(configured.defaultAssetIndex(), 1);
     }
 
     function testQueuedRailOnlyAcceptsUnlockedRailDeposits() external view {
