@@ -16,23 +16,20 @@ contract QueuedRailStrategy is BaseStrategy {
 
     error OnlyStakedRail();
     error InvalidStakedRail();
-    error StakedRailAlreadySet();
-
-    event StakedRailSet(address indexed stakedRail);
-
-    function setStakedRail(address stakedRailAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (stakedRailAddress == address(0)) revert InvalidStakedRail();
-        if (stakedRail != address(0)) revert StakedRailAlreadySet();
-        stakedRail = stakedRailAddress;
-        emit StakedRailSet(stakedRailAddress);
-    }
 
     function mintQueuedRail(address receiver, uint256 shares) external {
         if (msg.sender != stakedRail) revert OnlyStakedRail();
         _mint(receiver, shares);
     }
 
-    function initialize(address admin, address rail, RailStakePositionManager positionManagerAddress) external initializer {
+    function initialize(
+        address admin,
+        address rail,
+        RailStakePositionManager positionManagerAddress,
+        address stakedRailAddress
+    ) external initializer {
+        if (stakedRailAddress == address(0)) revert InvalidStakedRail();
+        stakedRail = stakedRailAddress;
         _initialize(admin, "Queued RAIL", "qRAIL", IERC20(rail).decimals(), false, false, true, 0);
         _addAsset(rail, IERC20(rail).decimals(), false);
         _setAssetWithdrawable(rail, true);

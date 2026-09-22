@@ -314,7 +314,9 @@ Required ordering within that instruction:
 The external unstake must succeed before qRAIL is minted. A position
 cannot mint qRAIL twice. Mint failure reverts the queue pop, unlock and accounting
 updates. qRAIL accepts minting only from its `stakedRail` address,
-configured once by its admin through `setStakedRail` during deployment.
+configured in qRAIL's initializer. Deployment precomputes the stRAIL proxy
+address from the broadcaster's CREATE nonce, then initializes both proxies
+in their constructors without exposing an uninitialized proxy.
 
 ## User Withdrawal Requests
 

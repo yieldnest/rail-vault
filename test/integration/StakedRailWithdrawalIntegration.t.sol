@@ -47,19 +47,20 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         manager = new RailStakePositionManager(address(this), rail, staking);
 
         QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
+        StakedRailStrategy strategyImplementation = new StakedRailStrategy();
+        address stakedRailAddress = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         qRail = QueuedRailStrategy(
             payable(
                 address(
                     new TransparentUpgradeableProxy(
                         address(qRailImplementation),
                         makeAddr("qRailProxyAdmin"),
-                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail), manager))
+                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail), manager, stakedRailAddress))
                     )
                 )
             )
         );
 
-        StakedRailStrategy strategyImplementation = new StakedRailStrategy();
         strategy = StakedRailStrategy(
             payable(
                 address(
@@ -73,6 +74,9 @@ contract StakedRailWithdrawalIntegrationTest is Test {
                 )
             )
         );
+
+        assertEq(address(strategy), stakedRailAddress);
+        assertEq(qRail.stakedRail(), address(strategy));
 
         Bag bagImplementation = new Bag();
         BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
@@ -138,7 +142,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         queuedRailProcessor.grantRole(queuedRailProcessor.KEEPER_ROLE(), address(this));
 
         manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
-        qRail.setStakedRail(address(strategy));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(processor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(queuedRailProcessor));

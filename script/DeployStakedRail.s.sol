@@ -92,19 +92,24 @@ contract DeployStakedRail is Script {
             new RailStakePositionManager(config.admin, IERC20(config.rail), IRailgunStaking(config.staking));
 
         QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
+        StakedRailStrategy strategyImplementation = new StakedRailStrategy();
+        // The next two broadcaster deployments are qRAIL and stRAIL, both initialized at creation.
+        address stakedRailAddress = vm.computeCreateAddress(config.admin, vm.getNonce(config.admin) + 1);
         deployed.qRail = QueuedRailStrategy(
             payable(
                 address(
                     new TransparentUpgradeableProxy(
                         address(qRailImplementation),
                         config.admin,
-                        abi.encodeCall(QueuedRailStrategy.initialize, (config.admin, config.rail, deployed.manager))
+                        abi.encodeCall(
+                            QueuedRailStrategy.initialize,
+                            (config.admin, config.rail, deployed.manager, stakedRailAddress)
+                        )
                     )
                 )
             )
         );
 
-        StakedRailStrategy strategyImplementation = new StakedRailStrategy();
         deployed.strategy = StakedRailStrategy(
             payable(
                 address(
@@ -119,6 +124,8 @@ contract DeployStakedRail is Script {
                 )
             )
         );
+
+        require(address(deployed.strategy) == stakedRailAddress, "Unexpected stRAIL address");
 
         Bag bagImplementation = new Bag();
         BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
@@ -202,7 +209,6 @@ contract DeployStakedRail is Script {
     function _wire(Config memory config, Deployed memory deployed) private {
         deployed.manager.grantRole(deployed.manager.PAUSER_ROLE(), config.admin);
         deployed.manager.grantRole(deployed.manager.CREATOR_ROLE(), address(deployed.strategy));
-        deployed.qRail.setStakedRail(address(deployed.strategy));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_ROLE(), address(deployed.processor));
         deployed.strategy.grantRole(deployed.strategy.PROCESSOR_MANAGER_ROLE(), config.admin);
         deployed.qRail.grantRole(deployed.qRail.PROCESSOR_ROLE(), address(deployed.queuedRailProcessor));

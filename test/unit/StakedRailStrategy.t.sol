@@ -46,19 +46,20 @@ contract StakedRailStrategyTest is Test {
         manager = new RailStakePositionManager(address(this), rail, staking);
 
         QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
+        StakedRailStrategy implementation = new StakedRailStrategy();
+        address stakedRailAddress = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         qRail = QueuedRailStrategy(
             payable(
                 address(
                     new TransparentUpgradeableProxy(
                         address(qRailImplementation),
                         makeAddr("qRailProxyAdmin"),
-                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail), manager))
+                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), address(rail), manager, stakedRailAddress))
                     )
                 )
             )
         );
 
-        StakedRailStrategy implementation = new StakedRailStrategy();
         strategy = StakedRailStrategy(
             payable(
                 address(
@@ -72,6 +73,9 @@ contract StakedRailStrategyTest is Test {
                 )
             )
         );
+
+        assertEq(address(strategy), stakedRailAddress);
+        assertEq(qRail.stakedRail(), address(strategy));
 
         Bag bagImplementation = new Bag();
         BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
@@ -137,7 +141,6 @@ contract StakedRailStrategyTest is Test {
         queuedRailProcessor.grantRole(queuedRailProcessor.KEEPER_ROLE(), address(this));
 
         manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
-        qRail.setStakedRail(address(strategy));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(processor));
         strategy.grantRole(strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROCESSOR_ROLE(), address(queuedRailProcessor));
@@ -334,15 +337,21 @@ contract StakedRailStrategyTest is Test {
 
     function testQueuedRailMinterCannotBeReplaced() external {
         assertEq(qRail.stakedRail(), address(strategy));
-        vm.expectRevert(QueuedRailStrategy.StakedRailAlreadySet.selector);
-        qRail.setStakedRail(user);
-        vm.expectRevert(QueuedRailStrategy.InvalidStakedRail.selector);
-        qRail.setStakedRail(address(0));
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", user, qRail.DEFAULT_ADMIN_ROLE()
-        ));
+        vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
+        qRail.initialize(address(this), address(rail), manager, user);
+        vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
         vm.prank(user);
-        qRail.setStakedRail(user);
+        qRail.initialize(user, address(rail), manager, user);
+        assertEq(qRail.stakedRail(), address(strategy));
+    }
+
+    function testQueuedRailInitializationRejectsZeroMinter() external {
+        QueuedRailStrategy implementation = new QueuedRailStrategy();
+        bytes memory data = abi.encodeCall(
+            QueuedRailStrategy.initialize, (address(this), address(rail), manager, address(0))
+        );
+        vm.expectRevert(QueuedRailStrategy.InvalidStakedRail.selector);
+        new TransparentUpgradeableProxy(address(implementation), address(this), data);
     }
 
     function testQueuedProcessorAndResolverHaveSeparatePermissions() external {
