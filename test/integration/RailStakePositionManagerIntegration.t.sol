@@ -553,6 +553,48 @@ contract RailStakePositionManagerIntegrationTest is Test {
         assertEq(rail.balanceOf(receiver), funded);
     }
 
+    function testFuzzReceiptMintBurnConservation(uint256 seed, uint8 stepsSeed) external {
+        uint256 steps = bound(uint256(stepsSeed), 1, 32);
+        uint256[] memory queued = new uint256[](steps);
+        uint256 queuedCount;
+
+        for (uint256 i = 0; i < steps; i++) {
+            uint256 random = uint256(keccak256(abi.encode(seed, i)));
+            uint256 action = random % 3;
+            if (action == 1 && manager.activePositionCount() != 0) {
+                uint256 id = manager.activeStakeHead();
+                _queue(id);
+                queued[queuedCount++] = id;
+            } else if (action == 2 && queuedCount != 0) {
+                uint256 index = (random / 3) % queuedCount;
+                uint256 id = queued[index];
+                (,,, uint256 locktime,) = staking.stakes(address(manager), id);
+                if (block.timestamp <= locktime) vm.warp(locktime + 1);
+                _claim(id);
+                queued[index] = queued[--queuedCount];
+            } else {
+                _create(bound(random / 3, 1, 100_000 ether));
+            }
+            _assertAccounting();
+        }
+
+        // Drain every remaining receipt, including runs that only created stakes.
+        while (manager.activePositionCount() != 0) {
+            uint256 id = manager.activeStakeHead();
+            _queue(id);
+            queued[queuedCount++] = id;
+            _assertAccounting();
+        }
+        vm.warp(block.timestamp + staking.STAKE_LOCKTIME() + 1);
+        while (queuedCount != 0) {
+            _claim(queued[--queuedCount]);
+            _assertAccounting();
+        }
+        assertEq(manager.activeRail().totalSupply(), 0);
+        assertEq(manager.unlockedRail().totalSupply(), 0);
+        assertEq(rail.balanceOf(receiver), funded);
+    }
+
     function testRepeatedInterleavedStakesQueuesAndClaims() external {
         // Each round leaves active and queued stakes behind for the following round.
         for (uint256 round = 0; round < 5; round++) {
@@ -802,6 +844,9 @@ contract RailStakePositionManagerIntegrationTest is Test {
     }
 
     function _create(uint256 amount) internal returns (uint256 id) {
+        uint256 activeSupply = manager.activeRail().totalSupply();
+        uint256 unlockedSupply = manager.unlockedRail().totalSupply();
+        uint256 creatorReceipts = manager.activeRail().balanceOf(strategy);
         uint256[] memory beforeIds = manager.activeStakeIdsList();
         uint256 callerBalance = rail.balanceOf(strategy);
         uint256 managerBalance = rail.balanceOf(address(manager));
@@ -811,6 +856,9 @@ contract RailStakePositionManagerIntegrationTest is Test {
         rail.approve(address(manager), amount);
         vm.prank(strategy);
         id = manager.createPosition(amount);
+        assertEq(manager.activeRail().totalSupply(), activeSupply + amount, "create must mint active principal");
+        assertEq(manager.activeRail().balanceOf(strategy), creatorReceipts + amount, "mint to creator");
+        assertEq(manager.unlockedRail().totalSupply(), unlockedSupply, "create must not mint unlocked receipts");
         IERC20 activeRail = IERC20(address(manager.activeRail()));
         vm.prank(strategy);
         assertTrue(activeRail.transfer(keeper, amount));
@@ -831,10 +879,19 @@ contract RailStakePositionManagerIntegrationTest is Test {
     }
 
     function _queue(uint256 id) internal {
+        uint256 activeSupply = manager.activeRail().totalSupply();
+        uint256 unlockedSupply = manager.unlockedRail().totalSupply();
+        uint256 activeBalance = manager.activeRail().balanceOf(keeper);
+        uint256 unlockedBalance = manager.unlockedRail().balanceOf(keeper);
         uint256[] memory beforeIds = manager.activeStakeIdsList();
         assertEq(manager.activeStakeHead(), id);
         vm.prank(keeper);
         assertEq(manager.queuePosition(), expectedAmounts[id]);
+        uint256 principal = expectedAmounts[id];
+        assertEq(manager.activeRail().totalSupply(), activeSupply - principal, "queue must burn active principal");
+        assertEq(manager.unlockedRail().totalSupply(), unlockedSupply + principal, "queue must mint unlocked principal");
+        assertEq(manager.activeRail().balanceOf(keeper), activeBalance - principal, "burn from queuer");
+        assertEq(manager.unlockedRail().balanceOf(keeper), unlockedBalance + principal, "mint to queuer");
         uint256[] memory afterIds = manager.activeStakeIdsList();
         assertEq(afterIds.length, beforeIds.length - 1);
         for (uint256 i = 0; i < afterIds.length; i++) {
@@ -846,10 +903,19 @@ contract RailStakePositionManagerIntegrationTest is Test {
     }
 
     function _claim(uint256 id) internal {
+        uint256 activeSupply = manager.activeRail().totalSupply();
+        uint256 unlockedSupply = manager.unlockedRail().totalSupply();
+        uint256 unlockedBalance = manager.unlockedRail().balanceOf(keeper);
+        uint256 receiverBalance = rail.balanceOf(receiver);
         uint256[] memory beforeIds = manager.activeStakeIdsList();
         (,,, uint256 locktime,) = staking.stakes(address(manager), id);
         vm.prank(keeper);
         assertEq(manager.claimPosition(id, receiver), expectedAmounts[id]);
+        uint256 principal = expectedAmounts[id];
+        assertEq(manager.activeRail().totalSupply(), activeSupply, "claim must not change active receipts");
+        assertEq(manager.unlockedRail().totalSupply(), unlockedSupply - principal, "claim must burn unlocked principal");
+        assertEq(manager.unlockedRail().balanceOf(keeper), unlockedBalance - principal, "burn from claimer");
+        assertEq(rail.balanceOf(receiver), receiverBalance + principal, "release matching RAIL principal");
         assertEq(manager.activeStakeIdsList(), beforeIds);
         (,,, uint256 afterLocktime, uint256 claimedTime) = staking.stakes(address(manager), id);
         assertEq(afterLocktime, locktime);
