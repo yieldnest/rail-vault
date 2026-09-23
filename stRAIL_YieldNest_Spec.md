@@ -134,6 +134,11 @@ src/
 
 ## StakedRailStrategy
 
+The initializer forwards all base initialization parameters to `_initialize`
+and stores the position manager and qRAIL references. `StakedRailSetupLib`
+configures the provider, assets, and qRAIL withdrawal permission in the same
+deployment transaction, then revokes its temporary configuration roles.
+
 Base asset:
 
 ``` solidity

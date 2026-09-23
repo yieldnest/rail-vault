@@ -23,6 +23,7 @@ import {
     QueuedRailDeploymentLib,
     QueuedRailSetupLib,
     StakedRailDeploymentLib,
+    StakedRailSetupLib,
     RailManagerDeploymentLib,
     RailProcessorsDeploymentLib,
     WithdrawalRequestDeploymentLib,
@@ -110,11 +111,24 @@ contract RailStrategyDeployer {
                         StakedRailDeploymentLib.deployImplementation(),
                         settings.admin,
                         abi.encodeCall(
-                            StakedRailStrategy.initialize, (address(this), settings.rail, result.manager, result.qRail)
+                            StakedRailStrategy.initialize,
+                            (
+                                address(this),
+                                "Staked RAIL",
+                                "stRAIL",
+                                IERC20Metadata(settings.rail).decimals(),
+                                true,
+                                false,
+                                true,
+                                0,
+                                result.manager,
+                                result.qRail
+                            )
                         )
                     )
                 ))
         );
+        StakedRailSetupLib.configure(result.strategy, settings.rail);
         result.bagFactory = WithdrawalSupportDeploymentLib.deployBagFactory(settings.admin);
         result.withdrawalRequest =
             WithdrawalRequestDeploymentLib.deploy(settings.admin, address(result.qRail), address(result.bagFactory));

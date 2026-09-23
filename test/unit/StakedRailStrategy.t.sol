@@ -15,7 +15,7 @@ import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinA
 
 import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
 import {RailProvider} from "../../src/core/RailProvider.sol";
-import {QueuedRailSetupLib} from "../../script/libraries/RailDeploymentLib.sol";
+import {QueuedRailSetupLib, StakedRailSetupLib} from "../../script/libraries/RailDeploymentLib.sol";
 import {RailReceiptToken} from "../../src/core/RailReceiptToken.sol";
 import {StakedRailStrategy} from "../../src/core/StakedRailStrategy.sol";
 import {StakedRailProcessor} from "../../src/processors/StakedRailProcessor.sol";
@@ -70,13 +70,17 @@ contract StakedRailStrategyTest is Test {
                         address(implementation),
                         makeAddr("stRailProxyAdmin"),
                         abi.encodeCall(
-                            StakedRailStrategy.initialize, (address(this), address(rail), manager, qRail)
+                            StakedRailStrategy.initialize, (
+                                address(this), "Staked RAIL", "stRAIL", rail.decimals(),
+                                true, false, true, 0, manager, qRail
+                            )
                         )
                     )
                 )
             )
         );
 
+        StakedRailSetupLib.configure(strategy, address(rail));
         Bag bagImplementation = new Bag();
         BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
         bagFactory = BeaconProxyFactory(
@@ -474,6 +478,33 @@ contract StakedRailStrategyTest is Test {
         vm.expectRevert(abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, role));
         vm.prank(user);
         manager.createPosition(1000 ether);
+    }
+
+    function testStakedRailInitializerForwardsAllParameters() external {
+        StakedRailStrategy implementation = new StakedRailStrategy();
+        StakedRailStrategy configured = StakedRailStrategy(payable(address(new TransparentUpgradeableProxy(
+            address(implementation), address(this),
+            abi.encodeCall(StakedRailStrategy.initialize, (
+                user, "Custom Stake", "CUSTOM", 6, false, true, false, 1, manager, qRail
+            ))
+        ))));
+        assertTrue(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), user));
+        assertFalse(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), address(this)));
+        assertEq(configured.name(), "Custom Stake");
+        assertEq(configured.symbol(), "CUSTOM");
+        assertEq(configured.decimals(), 6);
+        assertFalse(configured.paused());
+        assertTrue(configured.countNativeAsset());
+        assertFalse(configured.alwaysComputeTotalAssets());
+        assertEq(configured.defaultAssetIndex(), 1);
+        assertEq(address(configured.positionManager()), address(manager));
+        assertEq(address(configured.queuedRail()), address(qRail));
+        assertEq(configured.getAssets().length, 0);
+    }
+
+    function testStakedRailCannotBeReinitialized() external {
+        vm.expectRevert(abi.encodeWithSignature("InvalidInitialization()"));
+        strategy.initialize(user, "Custom Stake", "CUSTOM", 6, false, true, false, 1, manager, qRail);
     }
 
     function testQueuedRailCannotBeReinitialized() external {

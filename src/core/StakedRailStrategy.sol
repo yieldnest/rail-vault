@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IERC20Metadata as IERC20} from "@yieldnest-vault/Common.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BaseStrategy} from "@yieldnest-vault/strategy/BaseStrategy.sol";
-import {VaultLib} from "@yieldnest-vault/library/VaultLib.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {QueuedRailStrategy} from "./QueuedRailStrategy.sol";
-import {RailProvider} from "./RailProvider.sol";
 import {RailStakePositionManager} from "./RailStakePositionManager.sol";
 
 contract StakedRailStrategy is BaseStrategy {
@@ -34,24 +32,18 @@ contract StakedRailStrategy is BaseStrategy {
 
     function initialize(
         address admin,
-        address rail,
+        string memory name,
+        string memory symbol,
+        uint8 decimals_,
+        bool paused_,
+        bool countNativeAsset_,
+        bool alwaysComputeTotalAssets_,
+        uint256 defaultAssetIndex_,
         RailStakePositionManager positionManagerAddress,
         QueuedRailStrategy queuedRailAddress
     ) external initializer {
-        _initialize(admin, "Staked RAIL", "stRAIL", IERC20(rail).decimals(), true, false, true, 0);
-        _addAsset(rail, IERC20(rail).decimals(), true);
-        _addAsset(address(queuedRailAddress), IERC20(rail).decimals(), false);
-        _addAsset(address(positionManagerAddress.activeRail()), IERC20(rail).decimals(), false);
-        _setAssetWithdrawable(address(queuedRailAddress), true);
-        VaultLib.setProvider(
-            address(
-                new RailProvider(
-                    rail,
-                    address(positionManagerAddress.activeRail()),
-                    address(0),
-                    address(queuedRailAddress)
-                )
-            )
+        _initialize(
+            admin, name, symbol, decimals_, paused_, countNativeAsset_, alwaysComputeTotalAssets_, defaultAssetIndex_
         );
 
         positionManager = positionManagerAddress;

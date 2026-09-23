@@ -156,6 +156,17 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertTrue(queuedRailProcessor.hasRole(queuedRailProcessor.KEEPER_ROLE(), address(this)));
 
         assertFalse(strategy.hasRole(strategy.PROCESSOR_MANAGER_ROLE(), bootstrap));
+        assertFalse(strategy.hasRole(strategy.ASSET_MANAGER_ROLE(), bootstrap));
+        assertFalse(strategy.hasRole(strategy.PROVIDER_MANAGER_ROLE(), bootstrap));
+        assertFalse(strategy.getHasAllocator());
+        assertEq(strategy.getAssets().length, 3);
+        assertEq(strategy.asset(), address(rail));
+        assertTrue(strategy.getAsset(address(rail)).active);
+        assertFalse(strategy.getAsset(address(qRail)).active);
+        assertFalse(strategy.getAsset(address(manager.activeRail())).active);
+        assertFalse(strategy.getAssetWithdrawable(address(rail)));
+        assertTrue(strategy.getAssetWithdrawable(address(qRail)));
+        assertFalse(strategy.getAssetWithdrawable(address(manager.activeRail())));
         assertFalse(strategy.hasRole(strategy.UNPAUSER_ROLE(), bootstrap));
         assertFalse(qRail.hasRole(qRail.PROCESSOR_MANAGER_ROLE(), bootstrap));
         assertFalse(qRail.hasRole(qRail.ASSET_MANAGER_ROLE(), bootstrap));

@@ -50,6 +50,22 @@ library StakedRailDeploymentLib {
     }
 }
 
+library StakedRailSetupLib {
+    function configure(StakedRailStrategy strategy, address rail) external {
+        address qRail = address(strategy.queuedRail());
+        address activeRail = address(strategy.positionManager().activeRail());
+        strategy.grantRole(strategy.ASSET_MANAGER_ROLE(), address(this));
+        strategy.grantRole(strategy.PROVIDER_MANAGER_ROLE(), address(this));
+        strategy.setProvider(address(new RailProvider(rail, activeRail, address(0), qRail)));
+        strategy.addAsset(rail, true);
+        strategy.addAsset(qRail, false);
+        strategy.addAsset(activeRail, false);
+        strategy.setAssetWithdrawable(qRail, true);
+        strategy.revokeRole(strategy.ASSET_MANAGER_ROLE(), address(this));
+        strategy.revokeRole(strategy.PROVIDER_MANAGER_ROLE(), address(this));
+    }
+}
+
 library RailManagerDeploymentLib {
     function deploy(address rail, address staking) external returns (RailStakePositionManager) {
         return new RailStakePositionManager(address(this), IERC20(rail), IRailgunStaking(staking));
