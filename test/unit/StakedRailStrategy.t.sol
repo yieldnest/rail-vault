@@ -872,6 +872,35 @@ contract StakedRailStrategyTest is Test {
         assertEq(resolver.nextRequestToResolve(), id + 1);
     }
 
+    function testResolverFullSettlementRoundingDustDoesNotBlockFifo() external {
+        _deposit(user, 1000 ether);
+        processor.rebalanceStaking(1);
+
+        vm.startPrank(user);
+        strategy.approve(address(processor), 1000 ether);
+        processor.exitToQueuedRail(1000 ether, user, 1);
+        qRail.approve(address(requests), 1000 ether);
+        uint256 requestId = requests.requestWithdrawal(1000 ether, user, "");
+        vm.stopPrank();
+
+        uint256[] memory stakeIds = new uint256[](1);
+        stakeIds[0] = 0;
+        vm.warp(block.timestamp + 30 days + 1);
+        queuedRailProcessor.claimMaturedPositions(stakeIds);
+
+        // Simulate a 60% backing loss after the request is locked. A full 400 RAIL
+        // settlement burns all but one wei of qRAIL, leaving dust.
+        deal(address(rail), address(qRail), 400 ether);
+        assertEq(qRail.previewRedeem(1000 ether), 400 ether);
+        assertEq(qRail.previewWithdraw(400 ether), 1000 ether - 1);
+
+        // Expected behavior: settle the available RAIL and advance the FIFO cursor despite dust.
+        // Current behavior: SingleAssetFIFOResolver reverts IncompleteRedemption(requestId, 1).
+        assertEq(resolver.resolveRequests(1), 1);
+        assertEq(requests.requests(requestId).amountLocked, 0);
+        assertEq(resolver.nextRequestToResolve(), requestId + 1);
+    }
+
     function _setProcessorRules() internal {
         IVault.FunctionRule memory rule = _emptyRule();
         rule.paramRules = new IVault.ParamRule[](2);
