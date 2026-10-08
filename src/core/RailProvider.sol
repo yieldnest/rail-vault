@@ -30,6 +30,9 @@ contract RailProvider is IProvider {
     function getRate(address asset) external view returns (uint256) {
         if (asset != address(0) && (asset == rail || asset == activeRail || asset == unlockedRail)) return rate;
         if (asset == queuedRail && queuedRail != address(0)) {
+            // Critical: this quote is used to convert RAIL value into qRAIL on stRAIL exits.
+            // previewMint rounds up; convertToAssets rounds down and can understate the qRAIL
+            // rate, causing exits to issue excess qRAIL that redeems for more RAIL than deposited.
             return IERC4626(queuedRail).previewMint(10 ** IERC20Metadata(queuedRail).decimals());
         }
         revert UnsupportedAsset(asset);
