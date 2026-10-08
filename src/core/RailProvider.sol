@@ -30,7 +30,7 @@ contract RailProvider is IProvider {
     function getRate(address asset) external view returns (uint256) {
         if (asset != address(0) && (asset == rail || asset == activeRail || asset == unlockedRail)) return rate;
         if (asset == queuedRail && queuedRail != address(0)) {
-            return IERC4626(queuedRail).convertToAssets(10 ** IERC20Metadata(queuedRail).decimals());
+            return IERC4626(queuedRail).previewMint(10 ** IERC20Metadata(queuedRail).decimals());
         }
         revert UnsupportedAsset(asset);
     }

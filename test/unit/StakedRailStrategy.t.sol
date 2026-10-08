@@ -172,7 +172,7 @@ contract StakedRailStrategyTest is Test {
         assertEq(strategy.totalBaseAssets(), 2000 ether);
 
         rail.mint(address(qRail), 500 ether);
-        uint256 liveRate = qRail.convertToAssets(1 ether);
+        uint256 liveRate = qRail.previewMint(1 ether);
         assertGt(liveRate, 1 ether);
         assertEq(provider.getRate(address(qRail)), liveRate);
         assertEq(provider.getRate(address(rail)), 1 ether);
