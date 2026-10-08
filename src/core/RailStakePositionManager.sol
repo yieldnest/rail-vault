@@ -113,6 +113,9 @@ contract RailStakePositionManager is AccessControl, Pausable {
             balancesBefore[i] = tokens[i].balanceOf(address(this));
         }
 
+        // TODO: Handle rewards claimed permissionlessly for this manager before this call.
+        // Those intervals are already marked claimed, so the balance-delta forwarding below
+        // leaves those rewards stranded here. Add recovery that preserves RAIL principal.
         rewards.claim(tokens, address(this), startingInterval, endingInterval, hints);
 
         for (uint256 i = 0; i < tokens.length; i++) {
