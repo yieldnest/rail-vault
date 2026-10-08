@@ -395,6 +395,48 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertGt(qRail.convertToAssets(queuedRailReceived), attackerDeposit);
     }
 
+    function testFuzzLiveAccountingPreventsDonationExtraction(uint256 depositAmountSeed) external {
+        uint256 bootstrapDeposit = 5000 ether;
+        uint256 queuedRailBootstrap = 1000 ether;
+        uint256 stakedRailDonation = 1000 ether;
+        uint256 queuedRailDonation = 1000 ether;
+        uint256 depositAmount = bound(depositAmountSeed, 1, 4000) * 1 ether;
+
+        // Seed stRAIL with active positions and qRAIL with one queued position.
+        _deposit(alice, bootstrapDeposit);
+        assertEq(processor.rebalanceStaking(5), 5);
+        address[] memory targets = new address[](1);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory data = new bytes[](1);
+        targets[0] = address(strategy);
+        data[0] = abi.encodeCall(StakedRailStrategy.queuePosition, ());
+        vm.prank(address(processor));
+        strategy.processor(targets, values, data);
+        assertEq(qRail.balanceOf(address(strategy)), queuedRailBootstrap);
+        assertTrue(strategy.alwaysComputeTotalAssets());
+
+        // Direct donations to both vaults are included in Bob's entry price while accounting is live.
+        deal(address(rail), alice, stakedRailDonation + queuedRailDonation);
+        vm.prank(alice);
+        assertTrue(rail.transfer(address(strategy), stakedRailDonation));
+        vm.prank(alice);
+        assertTrue(rail.transfer(address(qRail), queuedRailDonation));
+        assertEq(qRail.totalAssets(), queuedRailBootstrap + queuedRailDonation);
+        assertGt(strategy.totalAssets(), bootstrapDeposit + stakedRailDonation);
+
+        _deposit(bob, depositAmount);
+        uint256 bobShares = strategy.balanceOf(bob);
+        assertLt(bobShares, depositAmount);
+
+        vm.startPrank(bob);
+        strategy.approve(address(processor), bobShares);
+        uint256 queuedRailReceived = processor.exitToQueuedRail(bobShares, bob, 4);
+        vm.stopPrank();
+
+        assertEq(strategy.balanceOf(bob), 0);
+        assertLe(qRail.convertToAssets(queuedRailReceived), depositAmount);
+    }
+
     function _deposit(address account, uint256 amount) internal {
         deal(address(rail), account, amount);
         vm.startPrank(account);
