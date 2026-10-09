@@ -3,11 +3,14 @@ pragma solidity ^0.8.24;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import {IRailgunGovernorRewards} from "../railgun/IRailgunGovernorRewards.sol";
 import {RailStakePositionManager} from "../core/RailStakePositionManager.sol";
 
-contract RailRewardsProcessor is AccessControl {
+contract RailRewardsProcessor is AccessControl, ReentrancyGuard {
+    using SafeERC20 for IERC20;
     bytes32 public constant CONFIG_MANAGER_ROLE = keccak256("CONFIG_MANAGER_ROLE");
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
 
@@ -21,6 +24,8 @@ contract RailRewardsProcessor is AccessControl {
     event RewardTokensSet(IERC20[] tokens);
     event NextClaimIntervalSet(uint256 nextClaimInterval);
     event RewardsHarvested(uint256 startingInterval, uint256 endingInterval, uint256[] amounts);
+    event TokenCollected(address indexed token, uint256 amount);
+    event TokenTransferred(address indexed token, address indexed receiver, uint256 amount);
 
     constructor(
         address admin,
@@ -62,19 +67,50 @@ contract RailRewardsProcessor is AccessControl {
     function harvest(uint256 endingInterval, uint256[] calldata hints)
         external
         onlyRole(KEEPER_ROLE)
+        nonReentrant
         returns (uint256[] memory amounts)
     {
         if (endingInterval < nextClaimInterval) revert InvalidIntervalRange();
         _validateRewardTokens(endingInterval);
 
         uint256 startingInterval = nextClaimInterval;
-        amounts =
-            positionManager.claimRewards(rewards, rewardTokens, startingInterval, endingInterval, hints, address(this));
+        rewards.claim(rewardTokens, address(positionManager), startingInterval, endingInterval, hints);
+        amounts = _collectTokens(rewardTokens);
 
         // TODO: Auto-compound claimed rewards. RAIL rewards should be routed back into the staking flow,
         // and non-RAIL rewards need an explicit hold/swap/accounting policy before compounding.
         nextClaimInterval = endingInterval + 1;
         emit RewardsHarvested(startingInterval, endingInterval, amounts);
+    }
+
+    /// @notice Collects existing balances independently of claims or the distributor's current token list.
+    function collectTokens(IERC20[] calldata tokens)
+        external
+        onlyRole(KEEPER_ROLE)
+        nonReentrant
+        returns (uint256[] memory amounts)
+    {
+        return _collectTokens(tokens);
+    }
+
+    /// @notice Routes collected tokens for further processing; the keeper is trusted with destinations.
+    function transferToken(IERC20 token, address receiver, uint256 amount) external onlyRole(KEEPER_ROLE) nonReentrant {
+        if (address(token) == address(0) || receiver == address(0)) revert ZeroAddress();
+        token.safeTransfer(receiver, amount);
+        emit TokenTransferred(address(token), receiver, amount);
+    }
+
+    function _collectTokens(IERC20[] memory tokens) internal returns (uint256[] memory amounts) {
+        amounts = new uint256[](tokens.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            IERC20 token = tokens[i];
+            uint256 amount = token.balanceOf(address(positionManager));
+            if (amount == 0) continue;
+            uint256 balanceBefore = token.balanceOf(address(this));
+            positionManager.transferToken(token, address(this), amount);
+            amounts[i] = token.balanceOf(address(this)) - balanceBefore;
+            emit TokenCollected(address(token), amounts[i]);
+        }
     }
 
     function setRewardTokens(IERC20[] calldata rewardTokens_) external onlyRole(CONFIG_MANAGER_ROLE) {

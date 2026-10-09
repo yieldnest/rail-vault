@@ -3,22 +3,22 @@ pragma solidity ^0.8.24;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {IRailgunGovernorRewards} from "../railgun/IRailgunGovernorRewards.sol";
 import {IRailgunStaking} from "../railgun/IRailgunStaking.sol";
 import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {RailReceiptToken} from "./RailReceiptToken.sol";
 
-contract RailStakePositionManager is AccessControl, Pausable {
+contract RailStakePositionManager is AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
 
     string public constant RAIL_STAKE_POSITION_MANAGER_VERSION = "0.1.0";
 
-    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
+    bytes32 public constant TOKEN_WITHDRAWER_ROLE = keccak256("TOKEN_WITHDRAWER_ROLE");
     bytes32 public constant CREATOR_ROLE = keccak256("CREATOR_ROLE");
     bytes32 public constant QUEUER_ROLE = keccak256("QUEUER_ROLE");
     bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
@@ -34,7 +34,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
     event PositionCreated(uint256 indexed stakeId, uint256 principal);
     event PositionQueued(uint256 indexed stakeId, uint256 principal, uint256 locktime);
     event PositionClaimed(uint256 indexed stakeId, uint256 principal, address indexed receiver);
-    event RewardsClaimed(address indexed rewards, address indexed receiver, address indexed token, uint256 amount);
+    event TokenTransferred(address indexed token, address indexed receiver, uint256 amount);
 
     constructor(address admin, IERC20 railToken, IRailgunStaking stakingContract) {
         rail = railToken;
@@ -45,7 +45,13 @@ contract RailStakePositionManager is AccessControl, Pausable {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
-    function createPosition(uint256 amount) external onlyRole(CREATOR_ROLE) whenNotPaused returns (uint256 stakeId) {
+    function createPosition(uint256 amount)
+        external
+        onlyRole(CREATOR_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 stakeId)
+    {
         rail.safeTransferFrom(msg.sender, address(this), amount);
         rail.forceApprove(address(staking), amount);
         stakeId = staking.stake(amount);
@@ -54,7 +60,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         emit PositionCreated(stakeId, amount);
     }
 
-    function queuePosition() external onlyRole(QUEUER_ROLE) whenNotPaused returns (uint256) {
+    function queuePosition() external onlyRole(QUEUER_ROLE) whenNotPaused nonReentrant returns (uint256) {
         uint256 stakeId = uint256(activeStakes.popFront());
         (uint256 principal, uint256 locktime, uint256 claimedTime) = _readPosition(stakeId);
         if (!isActivePosition(locktime, claimedTime)) revert InvalidPositionStatus();
@@ -72,6 +78,7 @@ contract RailStakePositionManager is AccessControl, Pausable {
         public
         onlyRole(CLAIMER_ROLE)
         whenNotPaused
+        nonReentrant
         returns (uint256 amount)
     {
         uint256 locktime;
@@ -97,34 +104,18 @@ contract RailStakePositionManager is AccessControl, Pausable {
         }
     }
 
-    function claimRewards(
-        IRailgunGovernorRewards rewards,
-        IERC20[] calldata tokens,
-        uint256 startingInterval,
-        uint256 endingInterval,
-        uint256[] calldata hints,
-        address receiver
-    ) external onlyRole(KEEPER_ROLE) returns (uint256[] memory claimed) {
-        if (address(rewards) == address(0) || receiver == address(0)) revert ZeroAddress();
-        claimed = new uint256[](tokens.length);
-        uint256[] memory balancesBefore = new uint256[](tokens.length);
-
-        for (uint256 i = 0; i < tokens.length; i++) {
-            balancesBefore[i] = tokens[i].balanceOf(address(this));
+    /// @notice Transfers any ERC-20 held by the manager; reward policy belongs to the authorized processor.
+    /// @dev Principal is held in staking between calls. The shared lock protects principal in transit.
+    function transferToken(IERC20 token, address receiver, uint256 amount)
+        external
+        onlyRole(TOKEN_WITHDRAWER_ROLE)
+        nonReentrant
+    {
+        if (address(token) == address(0) || receiver == address(0)) {
+            revert ZeroAddress();
         }
-
-        // TODO: Handle rewards claimed permissionlessly for this manager before this call.
-        // Those intervals are already marked claimed, so the balance-delta forwarding below
-        // leaves those rewards stranded here. Add recovery that preserves RAIL principal.
-        rewards.claim(tokens, address(this), startingInterval, endingInterval, hints);
-
-        for (uint256 i = 0; i < tokens.length; i++) {
-            claimed[i] = tokens[i].balanceOf(address(this)) - balancesBefore[i];
-            if (claimed[i] != 0) {
-                tokens[i].safeTransfer(receiver, claimed[i]);
-                emit RewardsClaimed(address(rewards), receiver, address(tokens[i]), claimed[i]);
-            }
-        }
+        token.safeTransfer(receiver, amount);
+        emit TokenTransferred(address(token), receiver, amount);
     }
 
     function activePositionCount() external view returns (uint256) {

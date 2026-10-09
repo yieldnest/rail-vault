@@ -549,7 +549,7 @@ RailStakePositionManager:
   CREATOR_ROLE -> StakedRailStrategy (createPosition)
   QUEUER_ROLE -> StakedRailStrategy (queuePosition)
   CLAIMER_ROLE -> QueuedRailStrategy (claimPosition / claimMaturedPositions)
-  KEEPER_ROLE -> RailRewardsProcessor (claimRewards only)
+  TOKEN_WITHDRAWER_ROLE -> RailRewardsProcessor (generic ERC-20 transferToken)
   PAUSER_ROLE -> pause / unpause (initially granted to config.admin)
 
 stRAIL:

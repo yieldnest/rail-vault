@@ -134,7 +134,9 @@ contract RailStakePositionManagerIntegrationTest is Test {
         IERC20 activeRail = IERC20(address(manager.activeRail()));
         vm.prank(keeper);
         assertTrue(activeRail.transfer(strategy, 1000 ether));
-        vm.expectRevert(abi.encodeWithSignature("ERC20InsufficientBalance(address,uint256,uint256)", keeper, 0, 1000 ether));
+        vm.expectRevert(
+            abi.encodeWithSignature("ERC20InsufficientBalance(address,uint256,uint256)", keeper, 0, 1000 ether)
+        );
         vm.prank(keeper);
         manager.queuePosition();
         assertEq(manager.activeStakeHead(), id);
@@ -155,7 +157,9 @@ contract RailStakePositionManagerIntegrationTest is Test {
         IERC20 unlockedRail = IERC20(address(manager.unlockedRail()));
         vm.prank(keeper);
         assertTrue(unlockedRail.transfer(strategy, 1000 ether));
-        vm.expectRevert(abi.encodeWithSignature("ERC20InsufficientBalance(address,uint256,uint256)", keeper, 0, 1000 ether));
+        vm.expectRevert(
+            abi.encodeWithSignature("ERC20InsufficientBalance(address,uint256,uint256)", keeper, 0, 1000 ether)
+        );
         vm.prank(keeper);
         manager.claimPosition(id, receiver);
         (,,,, uint256 claimedTime) = staking.stakes(address(manager), id);
@@ -452,39 +456,33 @@ contract RailStakePositionManagerIntegrationTest is Test {
         _assertAccounting();
     }
 
-    function testClaimRewardsRequiresKeeperRole() external {
-        IERC20[] memory tokens = new IERC20[](0);
-        uint256[] memory hints = new uint256[](0);
-        _expectRole(strategy, manager.KEEPER_ROLE());
-        manager.claimRewards(IRailgunGovernorRewards(address(0)), tokens, 0, 0, hints, receiver);
+    function testTransferTokenRequiresWithdrawerRole() external {
+        _expectRole(strategy, manager.TOKEN_WITHDRAWER_ROLE());
+        manager.transferToken(rail, receiver, 0);
         _assertAccounting();
     }
 
-    function testClaimRewardsRevertsForZeroRewardsAddress() external {
-        IERC20[] memory tokens = new IERC20[](0);
-        uint256[] memory hints = new uint256[](0);
-        manager.grantRole(manager.KEEPER_ROLE(), keeper);
+    function testTransferTokenRevertsForZeroToken() external {
+        manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), keeper);
         vm.expectRevert(RailStakePositionManager.ZeroAddress.selector);
         vm.prank(keeper);
-        manager.claimRewards(IRailgunGovernorRewards(address(0)), tokens, 0, 0, hints, receiver);
+        manager.transferToken(IERC20(address(0)), receiver, 0);
         _assertAccounting();
     }
 
-    function testClaimRewardsRevertsForZeroReceiver() external {
-        IERC20[] memory tokens = new IERC20[](0);
-        uint256[] memory hints = new uint256[](0);
-        manager.grantRole(manager.KEEPER_ROLE(), keeper);
+    function testTransferTokenRevertsForZeroReceiver() external {
+        manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), keeper);
         vm.expectRevert(RailStakePositionManager.ZeroAddress.selector);
         vm.prank(keeper);
-        manager.claimRewards(IRailgunGovernorRewards(RAILGUN_STAKING), tokens, 0, 0, hints, address(0));
+        manager.transferToken(rail, address(0), 0);
         _assertAccounting();
     }
 
-    function testHarvestRealRewardsAndDoNotForwardExistingBalances() external {
+    function testCollectRealRewardsAfterPermissionlessClaim() external {
         IMainnetGovernorRewards rewards = IMainnetGovernorRewards(0xA02782CE1bF85f56f8cC7C0E66e61299Ac75c86f);
         IERC20 weth = IERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
         assertTrue(rewards.tokens(weth));
-        manager.grantRole(manager.KEEPER_ROLE(), keeper);
+        manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), keeper);
         _create(1000 ether);
 
         uint256 interval = rewards.currentInterval() + 1;
@@ -499,17 +497,16 @@ contract RailStakePositionManagerIntegrationTest is Test {
         assertGt(expected, 0);
         deal(address(weth), address(manager), 1 ether);
         uint256 balanceBefore = weth.balanceOf(receiver);
+        vm.prank(makeAddr("permissionlessClaimer"));
+        rewards.claim(tokens, address(manager), interval, interval, hints);
+        assertEq(weth.balanceOf(address(manager)), 1 ether + expected);
+        // A repeated claim pays nothing, but collection still retrieves the earlier payout.
+        rewards.claim(tokens, address(manager), interval, interval, hints);
+        uint256 amount = weth.balanceOf(address(manager));
         vm.prank(keeper);
-        uint256[] memory claimed = manager.claimRewards(rewards, tokens, interval, interval, hints, receiver);
-        assertEq(claimed[0], expected);
-        assertEq(weth.balanceOf(receiver) - balanceBefore, expected);
-        assertEq(weth.balanceOf(address(manager)), 1 ether);
-
-        vm.prank(keeper);
-        claimed = manager.claimRewards(rewards, tokens, interval, interval, hints, receiver);
-        assertEq(claimed[0], 0);
-        assertEq(weth.balanceOf(receiver) - balanceBefore, expected);
-        assertEq(weth.balanceOf(address(manager)), 1 ether);
+        manager.transferToken(weth, receiver, amount);
+        assertEq(weth.balanceOf(receiver) - balanceBefore, expected + 1 ether);
+        assertEq(weth.balanceOf(address(manager)), 0);
         _assertAccounting();
     }
 

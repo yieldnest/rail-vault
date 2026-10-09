@@ -153,7 +153,7 @@ contract RailStrategyDeployer {
         result.manager.grantRole(result.manager.CREATOR_ROLE(), address(result.strategy));
         result.manager.grantRole(result.manager.QUEUER_ROLE(), address(result.strategy));
         result.manager.grantRole(result.manager.CLAIMER_ROLE(), address(result.qRail));
-        result.manager.grantRole(result.manager.KEEPER_ROLE(), address(result.rewardsProcessor));
+        result.manager.grantRole(result.manager.TOKEN_WITHDRAWER_ROLE(), address(result.rewardsProcessor));
         result.strategy.grantRole(result.strategy.PROCESSOR_ROLE(), address(result.processor));
         result.qRail.grantRole(result.qRail.PROCESSOR_ROLE(), address(result.queuedRailProcessor));
         result.queuedRailProcessor.grantRole(result.queuedRailProcessor.KEEPER_ROLE(), settings.admin);

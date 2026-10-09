@@ -13,6 +13,7 @@ Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 - `src/core/RailReceiptToken.sol`: minimal OZ ERC20 used for ActiveRail and UnlockedRail; only the position manager can mint or burn.
 - `src/processors/StakedRailProcessor.sol`: permissionless chunked staking and qRAIL exits through stRAIL's processor.
 - `src/core/RailStakePositionManager.sol`: records RAILGUN stake IDs, issues/burns principal receipts, queues full positions, and claims matured stakes.
+- `src/processors/RailRewardsProcessor.sol`: claims rewards directly from RAILGUN and collects manager token balances through `TOKEN_WITHDRAWER_ROLE`. Keepers can independently collect any ERC20 and forward collected tokens; swaps and auto-compounding remain unimplemented.
 - `lib/yieldnest-vault-withdrawals/src/withdrawers/BaseWithdrawer.sol`: existing YieldNest adapter plugged directly into `WithdrawalRequest` for qRAIL redemptions.
 - `src/processors/QueuedRailProcessor.sol`: claims matured RAIL into qRAIL through its processor.
 - `src/withdrawals/SingleAssetFIFOResolver.sol`: permissionless FIFO settlement of qRAIL withdrawal requests.

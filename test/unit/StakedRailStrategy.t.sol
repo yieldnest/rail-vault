@@ -407,7 +407,7 @@ contract StakedRailStrategyTest is Test {
         vm.prank(address(processor));
         manager.claimMaturedPositions(ids, address(qRail));
 
-        manager.grantRole(manager.KEEPER_ROLE(), user);
+        manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), user);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)", user, manager.QUEUER_ROLE()
         ));
