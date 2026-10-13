@@ -5,19 +5,30 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /// @notice Permissionless FIFO settlement into the vault's base asset.
 /// @dev Requires a withdrawer with matching conversion rules and liquidity held directly in the vault.
-contract SingleAssetFIFOResolver {
-    IERC4626 public immutable vault;
-    WithdrawalRequest public immutable withdrawalRequest;
+contract SingleAssetFIFOResolver is Initializable {
+    IERC4626 public vault;
+    WithdrawalRequest public withdrawalRequest;
 
     uint256 public nextRequestToResolve;
+    uint256[50] private __gap;
 
     event RequestResolved(uint256 indexed requestId, uint256 assetAmount);
     error IncompleteRedemption(uint256 requestId, uint256 remainingShares);
 
-    constructor(IERC4626 vaultAddress, WithdrawalRequest withdrawalRequestAddress) {
+    error ZeroAddress();
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(IERC4626 vaultAddress, WithdrawalRequest withdrawalRequestAddress) external initializer {
+        if (address(vaultAddress) == address(0) || address(withdrawalRequestAddress) == address(0)) {
+            revert ZeroAddress();
+        }
         vault = vaultAddress;
         withdrawalRequest = withdrawalRequestAddress;
     }

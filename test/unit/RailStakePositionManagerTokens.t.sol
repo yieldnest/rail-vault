@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
+import {RailManagerDeploymentLib} from "../../script/libraries/RailDeploymentLib.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -44,7 +45,7 @@ contract RailStakePositionManagerTokensTest is Test {
     function setUp() external {
         rail = new CallbackRail();
         staking = new MockRailgunStaking(rail);
-        manager = new RailStakePositionManager(address(this), rail, staking);
+        manager = RailManagerDeploymentLib.deploy(address(rail), address(staking), address(this));
         manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), address(this));
         manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), address(rail));
         manager.grantRole(manager.CREATOR_ROLE(), address(this));

@@ -1,16 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 
-contract RailReceiptToken is ERC20 {
-    address public immutable manager;
-    uint8 private immutable receiptDecimals;
+contract RailReceiptToken is ERC20Upgradeable {
+    address public manager;
+    uint8 private receiptDecimals;
+    uint256[49] private __gap;
 
     error OnlyManager();
+    error ZeroAddress();
 
-    constructor(string memory name_, string memory symbol_, uint8 decimals_) ERC20(name_, symbol_) {
-        manager = msg.sender;
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(string memory name_, string memory symbol_, uint8 decimals_, address manager_)
+        external
+        initializer
+    {
+        if (manager_ == address(0)) revert ZeroAddress();
+        __ERC20_init(name_, symbol_);
+        manager = manager_;
         receiptDecimals = decimals_;
     }
 

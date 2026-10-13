@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
+import {RailManagerDeploymentLib} from "../../script/libraries/RailDeploymentLib.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -8,10 +9,10 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 import {IValidator} from "@yieldnest-vault/interface/IValidator.sol";
 import {Bag} from "@yieldnest-vault-withdrawals/Bag.sol";
-import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
+import {TransparentBagFactory} from "../../src/withdrawals/TransparentBagFactory.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 import {IBag} from "@yieldnest-vault-withdrawals/interface/IBag.sol";
-import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
+import {RailMinAmountRequestPolicy} from "../../src/withdrawals/RailMinAmountRequestPolicy.sol";
 
 import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
 import {RailProvider} from "../../src/core/RailProvider.sol";
@@ -35,7 +36,7 @@ contract StakedRailStrategyTest is Test {
     QueuedRailStrategy qRail;
     RailStakePositionManager manager;
     StakedRailStrategy strategy;
-    BeaconProxyFactory bagFactory;
+    TransparentBagFactory bagFactory;
     WithdrawalRequest requests;
     BaseWithdrawer withdrawer;
     SingleAssetFIFOResolver resolver;
@@ -46,61 +47,76 @@ contract StakedRailStrategyTest is Test {
         rail = new MockERC20("RAIL", "RAIL", 18);
         staking = new MockRailgunStaking(rail);
 
-        manager = new RailStakePositionManager(address(this), rail, staking);
+        manager = RailManagerDeploymentLib.deploy(address(rail), address(staking), address(this));
 
         QueuedRailStrategy qRailImplementation = new QueuedRailStrategy();
         StakedRailStrategy implementation = new StakedRailStrategy();
         qRail = QueuedRailStrategy(
-            payable(
-                address(
+            payable(address(
                     new TransparentUpgradeableProxy(
                         address(qRailImplementation),
                         makeAddr("qRailProxyAdmin"),
-                        abi.encodeCall(QueuedRailStrategy.initialize, (address(this), "Queued RAIL", "qRAIL", rail.decimals(), false, false, true, 0))
+                        abi.encodeCall(
+                            QueuedRailStrategy.initialize,
+                            (address(this), "Queued RAIL", "qRAIL", rail.decimals(), false, false, true, 0)
+                        )
                     )
-                )
-            )
+                ))
         );
 
-        QueuedRailSetupLib.configure(qRail, address(rail), address(manager.unlockedRail()));
+        QueuedRailSetupLib.configure(qRail, address(rail), address(manager.unlockedRail()), address(this));
         strategy = StakedRailStrategy(
-            payable(
-                address(
+            payable(address(
                     new TransparentUpgradeableProxy(
                         address(implementation),
                         makeAddr("stRailProxyAdmin"),
                         abi.encodeCall(
-                            StakedRailStrategy.initialize, (
-                                address(this), "Staked RAIL", "stRAIL", rail.decimals(),
-                                true, false, true, 0, manager, qRail
+                            StakedRailStrategy.initialize,
+                            (
+                                address(this),
+                                "Staked RAIL",
+                                "stRAIL",
+                                rail.decimals(),
+                                true,
+                                false,
+                                true,
+                                0,
+                                manager,
+                                qRail
                             )
                         )
                     )
-                )
-            )
+                ))
         );
 
-        StakedRailSetupLib.configure(strategy, address(rail));
+        StakedRailSetupLib.configure(strategy, address(rail), address(this));
         Bag bagImplementation = new Bag();
-        BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
-        bagFactory = BeaconProxyFactory(
+        TransparentBagFactory bagFactoryImplementation = new TransparentBagFactory();
+        bagFactory = TransparentBagFactory(
             address(
                 new TransparentUpgradeableProxy(
                     address(bagFactoryImplementation),
                     makeAddr("bagFactoryProxyAdmin"),
                     abi.encodeCall(
-                        BeaconProxyFactory.initialize,
+                        TransparentBagFactory.initialize,
                         (address(bagImplementation), address(this), address(this), address(this))
                     )
                 )
             )
         );
 
-        MinAmountRequestPolicy requestPolicy = new MinAmountRequestPolicy(1);
+        RailMinAmountRequestPolicy requestPolicy = RailMinAmountRequestPolicy(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new RailMinAmountRequestPolicy()),
+                    address(this),
+                    abi.encodeCall(RailMinAmountRequestPolicy.initialize, (1))
+                )
+            )
+        );
         WithdrawalRequest requestImplementation = new WithdrawalRequest();
         requests = WithdrawalRequest(
-            payable(
-                address(
+            payable(address(
                     new TransparentUpgradeableProxy(
                         address(requestImplementation),
                         makeAddr("requestProxyAdmin"),
@@ -119,27 +135,30 @@ contract StakedRailStrategyTest is Test {
                             )
                         )
                     )
-                )
-            )
+                ))
         );
 
         BaseWithdrawer withdrawerImplementation = new BaseWithdrawer();
         withdrawer = BaseWithdrawer(
-            payable(
-                address(
+            payable(address(
                     new TransparentUpgradeableProxy(
                         address(withdrawerImplementation),
                         makeAddr("withdrawerProxyAdmin"),
                         abi.encodeCall(BaseWithdrawer.initialize, (address(qRail), address(requests)))
                     )
+                ))
+        );
+
+        resolver = SingleAssetFIFOResolver(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new SingleAssetFIFOResolver()),
+                    address(this),
+                    abi.encodeCall(SingleAssetFIFOResolver.initialize, (IERC4626(address(qRail)), requests))
                 )
             )
         );
-
-        resolver =
-            new SingleAssetFIFOResolver(IERC4626(address(qRail)), requests);
-        processor =
-            new StakedRailProcessor(address(this), strategy, 1000 ether);
+        processor = new StakedRailProcessor(address(this), strategy, 1000 ether);
 
         queuedRailProcessor = new QueuedRailProcessor(address(this), qRail, manager);
         queuedRailProcessor.grantRole(queuedRailProcessor.KEEPER_ROLE(), address(this));
@@ -229,9 +248,11 @@ contract StakedRailStrategyTest is Test {
         vm.prank(address(processor));
         strategy.queuePosition();
 
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), manager.QUEUER_ROLE()
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), manager.QUEUER_ROLE()
+            )
+        );
         vm.prank(address(processor));
         manager.queuePosition();
     }
@@ -323,7 +344,9 @@ contract StakedRailStrategyTest is Test {
         processor.rebalanceStaking(1);
         vm.mockCallRevert(
             address(qRail),
-            abi.encodeWithSignature("depositAsset(address,uint256,address)", address(manager.unlockedRail()), 1000 ether, address(strategy)),
+            abi.encodeWithSignature(
+                "depositAsset(address,uint256,address)", address(manager.unlockedRail()), 1000 ether, address(strategy)
+            ),
             abi.encodeWithSignature("DepositFailed()")
         );
         vm.expectRevert();
@@ -341,11 +364,13 @@ contract StakedRailStrategyTest is Test {
         _deposit(user, 1000 ether);
         processor.rebalanceStaking(1);
         rail.mint(address(qRail), 1000 ether);
-        vm.expectRevert(abi.encodeWithSelector(
-            IVault.ProcessFailed.selector,
-            abi.encodeCall(StakedRailStrategy.queuePosition, ()),
-            abi.encodeWithSelector(StakedRailStrategy.ZeroQueuedShares.selector)
-        ));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVault.ProcessFailed.selector,
+                abi.encodeCall(StakedRailStrategy.queuePosition, ()),
+                abi.encodeWithSelector(StakedRailStrategy.ZeroQueuedShares.selector)
+            )
+        );
         _queueThroughStrategy();
         assertEq(manager.activeRail().balanceOf(address(strategy)), 1000 ether);
         assertEq(manager.unlockedRail().totalSupply(), 0);
@@ -384,39 +409,45 @@ contract StakedRailStrategyTest is Test {
         _deposit(user, 1000 ether);
         processor.rebalanceStaking(1);
 
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), manager.QUEUER_ROLE()
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), manager.QUEUER_ROLE()
+            )
+        );
         vm.prank(address(resolver));
         manager.queuePosition();
 
         _queueThroughStrategy();
         vm.warp(block.timestamp + 30 days + 1);
 
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), manager.CLAIMER_ROLE()
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), manager.CLAIMER_ROLE()
+            )
+        );
         vm.prank(address(processor));
         manager.claimPosition(0, address(qRail));
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = 0;
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), manager.CLAIMER_ROLE()
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), manager.CLAIMER_ROLE()
+            )
+        );
         vm.prank(address(processor));
         manager.claimMaturedPositions(ids, address(qRail));
 
         manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), user);
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", user, manager.QUEUER_ROLE()
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, manager.QUEUER_ROLE())
+        );
         vm.prank(user);
         manager.queuePosition();
 
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", user, manager.CLAIMER_ROLE()
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, manager.CLAIMER_ROLE())
+        );
         vm.prank(user);
         manager.claimPosition(0, user);
 
@@ -429,9 +460,11 @@ contract StakedRailStrategyTest is Test {
         _queueThroughStrategy();
         vm.warp(block.timestamp + 30 days + 1);
 
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), manager.CLAIMER_ROLE()
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), manager.CLAIMER_ROLE()
+            )
+        );
         vm.prank(address(resolver));
         manager.claimPosition(0, user);
 
@@ -482,12 +515,18 @@ contract StakedRailStrategyTest is Test {
 
     function testStakedRailInitializerForwardsAllParameters() external {
         StakedRailStrategy implementation = new StakedRailStrategy();
-        StakedRailStrategy configured = StakedRailStrategy(payable(address(new TransparentUpgradeableProxy(
-            address(implementation), address(this),
-            abi.encodeCall(StakedRailStrategy.initialize, (
-                user, "Custom Stake", "CUSTOM", 6, false, true, false, 1, manager, qRail
-            ))
-        ))));
+        StakedRailStrategy configured = StakedRailStrategy(
+            payable(address(
+                    new TransparentUpgradeableProxy(
+                        address(implementation),
+                        address(this),
+                        abi.encodeCall(
+                            StakedRailStrategy.initialize,
+                            (user, "Custom Stake", "CUSTOM", 6, false, true, false, 1, manager, qRail)
+                        )
+                    )
+                ))
+        );
         assertTrue(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), user));
         assertFalse(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), address(this)));
         assertEq(configured.name(), "Custom Stake");
@@ -518,10 +557,17 @@ contract StakedRailStrategyTest is Test {
 
     function testQueuedRailInitializerForwardsAllParameters() external {
         QueuedRailStrategy implementation = new QueuedRailStrategy();
-        QueuedRailStrategy configured = QueuedRailStrategy(payable(address(new TransparentUpgradeableProxy(
-            address(implementation), address(this),
-            abi.encodeCall(QueuedRailStrategy.initialize, (user, "Custom Queue", "CUSTOM", 6, true, true, false, 1))
-        ))));
+        QueuedRailStrategy configured = QueuedRailStrategy(
+            payable(address(
+                    new TransparentUpgradeableProxy(
+                        address(implementation),
+                        address(this),
+                        abi.encodeCall(
+                            QueuedRailStrategy.initialize, (user, "Custom Queue", "CUSTOM", 6, true, true, false, 1)
+                        )
+                    )
+                ))
+        );
         assertTrue(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), user));
         assertFalse(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), address(this)));
         assertEq(configured.name(), "Custom Queue");
@@ -552,9 +598,8 @@ contract StakedRailStrategyTest is Test {
 
     function testQueuedRailRejectsNonAllocatorDepositsAndWithdrawals() external {
         address unlockedRail = address(manager.unlockedRail());
-        bytes memory expected = abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", user, qRail.ALLOCATOR_ROLE()
-        );
+        bytes memory expected =
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, qRail.ALLOCATOR_ROLE());
         vm.expectRevert(expected);
         vm.prank(user);
         qRail.depositAsset(unlockedRail, 1000 ether, user);
@@ -582,11 +627,13 @@ contract StakedRailStrategyTest is Test {
         processor.rebalanceStaking(1);
         bytes32 role = qRail.ALLOCATOR_ROLE();
         qRail.revokeRole(role, address(strategy));
-        vm.expectRevert(abi.encodeWithSelector(
-            IVault.ProcessFailed.selector,
-            abi.encodeCall(StakedRailStrategy.queuePosition, ()),
-            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", address(strategy), role)
-        ));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVault.ProcessFailed.selector,
+                abi.encodeCall(StakedRailStrategy.queuePosition, ()),
+                abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", address(strategy), role)
+            )
+        );
         _queueThroughStrategy();
         assertEq(manager.activeRail().totalSupply(), 1000 ether);
         assertEq(manager.unlockedRail().totalSupply(), 0);
@@ -604,9 +651,9 @@ contract StakedRailStrategyTest is Test {
         queuedRailProcessor.claimMaturedPositions(ids);
 
         qRail.revokeRole(role, address(withdrawer));
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(withdrawer), role
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", address(withdrawer), role)
+        );
         resolver.resolveRequests(1);
         assertEq(requests.requests(id).amountLocked, 1000 ether);
         assertEq(rail.balanceOf(requests.requests(id).bag), 0);
@@ -623,30 +670,38 @@ contract StakedRailStrategyTest is Test {
         assertTrue(requests.hasRole(resolverRole, address(resolver)));
         assertFalse(requests.hasRole(resolverRole, address(queuedRailProcessor)));
         assertFalse(manager.hasRole(manager.CLAIMER_ROLE(), address(queuedRailProcessor)));
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), processorRole
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", address(resolver), processorRole
+            )
+        );
         vm.prank(address(resolver));
         qRail.processor(new address[](0), new uint256[](0), new bytes[](0));
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(queuedRailProcessor), resolverRole
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", address(queuedRailProcessor), resolverRole
+            )
+        );
         vm.prank(address(queuedRailProcessor));
         requests.resolveWithdrawalRequest(0, address(rail), 1);
     }
 
     function testQueuedProcessorRequiresKeeperAndVaultProcessorRoles() external {
         uint256[] memory ids = new uint256[](0);
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", user, queuedRailProcessor.KEEPER_ROLE()
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", user, queuedRailProcessor.KEEPER_ROLE()
+            )
+        );
         vm.prank(user);
         queuedRailProcessor.claimMaturedPositions(ids);
         bytes32 role = qRail.PROCESSOR_ROLE();
         qRail.revokeRole(role, address(queuedRailProcessor));
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(queuedRailProcessor), role
-        ));
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", address(queuedRailProcessor), role
+            )
+        );
         queuedRailProcessor.claimMaturedPositions(ids);
     }
 
@@ -662,9 +717,8 @@ contract StakedRailStrategyTest is Test {
         processor.rebalanceStaking(1);
         bytes32 role = strategy.PROCESSOR_ROLE();
         strategy.revokeRole(role, address(processor));
-        bytes memory expected = abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)", address(processor), role
-        );
+        bytes memory expected =
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", address(processor), role);
         vm.expectRevert(expected);
         processor.rebalanceStaking(1);
         vm.prank(user);
@@ -729,7 +783,9 @@ contract StakedRailStrategyTest is Test {
         assertEq(manager.activeStakeHead(), 0);
         assertEq(manager.activeStakeTail(), 2);
         uint256[] memory ids = manager.activeStakeIdsList();
-        for (uint256 i = 0; i < 3; i++) assertEq(ids[i], i);
+        for (uint256 i = 0; i < 3; i++) {
+            assertEq(ids[i], i);
+        }
         assertEq(manager.activePositionCount(), 3);
         assertEq(manager.activeRail().totalSupply(), 3000 ether);
         assertEq(manager.unlockedRail().totalSupply(), 0);
@@ -740,7 +796,9 @@ contract StakedRailStrategyTest is Test {
     function testStakingFailureRollsBackCallerFundingAndApproval() external {
         _deposit(user, 1000 ether);
         vm.mockCallRevert(
-            address(staking), abi.encodeCall(IRailgunStaking.stake, (1000 ether)), abi.encodeWithSignature("StakeFailed()")
+            address(staking),
+            abi.encodeCall(IRailgunStaking.stake, (1000 ether)),
+            abi.encodeWithSignature("StakeFailed()")
         );
         vm.expectRevert();
         processor.rebalanceStaking(1);

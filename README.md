@@ -58,6 +58,26 @@ the implementations and linked libraries meet on-chain deployment limits.
 
 ## Notes
 
+### Upgradeability
+
+New deployments use OpenZeppelin TransparentUpgradeableProxy (TUP) instances for
+stRAIL, qRAIL, the position manager, aRAIL/uRAIL receipts, both providers, withdrawal
+requests, the withdrawer, FIFO resolver, minimum-amount policy and bag factory.
+Every withdrawal bag is also a TUP. Each proxy has its own ProxyAdmin, initially
+owned by `ADMIN`; operational roles do not grant upgrade authority. Initializers
+run atomically during proxy creation and implementation initializers are disabled.
+
+`TransparentBagFactory` replaces the shared beacon factory. Its
+`upgradeImplementation` changes the template for **future bags only**; existing
+bags must be upgraded individually through their ProxyAdmins. This costs more gas
+per withdrawal request than a shared beacon deployment.
+
+The three processors remain constructor-based, non-upgradeable contracts. External
+RAIL/RAILGUN contracts, deployment libraries and the single-use deployment helper
+are not converted. This is a fresh-deployment layout, not an in-place migration of
+old direct deployments or beacon factories. Future upgrades must preserve storage
+layout and use authorized, versioned reinitializers only when necessary.
+
 YieldNest dependencies are resolved with context remappings, including
 `lib/yieldnest-vault:src=lib/yieldnest-vault/src` and
 `lib/yieldnest-vault-withdrawals:src=lib/yieldnest-vault-withdrawals/src`, so no root-level compatibility symlinks are required.

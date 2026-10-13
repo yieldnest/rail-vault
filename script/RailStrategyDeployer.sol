@@ -6,7 +6,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 import {IValidator} from "@yieldnest-vault/interface/IValidator.sol";
-import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
+import {TransparentBagFactory} from "../src/withdrawals/TransparentBagFactory.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 
 import {QueuedRailStrategy} from "../src/core/QueuedRailStrategy.sol";
@@ -46,7 +46,7 @@ contract RailStrategyDeployer {
         QueuedRailStrategy qRail;
         RailStakePositionManager manager;
         StakedRailStrategy strategy;
-        BeaconProxyFactory bagFactory;
+        TransparentBagFactory bagFactory;
         WithdrawalRequest withdrawalRequest;
         BaseWithdrawer withdrawer;
         SingleAssetFIFOResolver resolver;
@@ -82,7 +82,7 @@ contract RailStrategyDeployer {
     }
 
     function _deploy(Config memory settings) private returns (Deployed memory result) {
-        result.manager = RailManagerDeploymentLib.deploy(settings.rail, settings.staking);
+        result.manager = RailManagerDeploymentLib.deploy(settings.rail, settings.staking, settings.admin);
         result.qRail = QueuedRailStrategy(
             payable(address(
                     new TransparentUpgradeableProxy(
@@ -104,7 +104,9 @@ contract RailStrategyDeployer {
                     )
                 ))
         );
-        QueuedRailSetupLib.configure(result.qRail, settings.rail, address(result.manager.unlockedRail()));
+        QueuedRailSetupLib.configure(
+            result.qRail, settings.rail, address(result.manager.unlockedRail()), settings.admin
+        );
         result.strategy = StakedRailStrategy(
             payable(address(
                     new TransparentUpgradeableProxy(
@@ -128,14 +130,15 @@ contract RailStrategyDeployer {
                     )
                 ))
         );
-        StakedRailSetupLib.configure(result.strategy, settings.rail);
+        StakedRailSetupLib.configure(result.strategy, settings.rail, settings.admin);
         result.bagFactory = WithdrawalSupportDeploymentLib.deployBagFactory(settings.admin);
         result.withdrawalRequest =
             WithdrawalRequestDeploymentLib.deploy(settings.admin, address(result.qRail), address(result.bagFactory));
         result.withdrawer = WithdrawalSupportDeploymentLib.deployWithdrawer(
             settings.admin, address(result.qRail), address(result.withdrawalRequest)
         );
-        result.resolver = RailProcessorsDeploymentLib.deployResolver(result.qRail, result.withdrawalRequest);
+        result.resolver =
+            RailProcessorsDeploymentLib.deployResolver(result.qRail, result.withdrawalRequest, settings.admin);
         result.processor =
             RailProcessorsDeploymentLib.deployStakedProcessor(settings.admin, result.strategy, settings.stakeChunkSize);
         result.queuedRailProcessor = RailProcessorsDeploymentLib.deployQueuedProcessor(result.qRail, result.manager);

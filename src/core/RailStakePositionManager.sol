@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -12,7 +13,7 @@ import {IRailgunStaking} from "../railgun/IRailgunStaking.sol";
 import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {RailReceiptToken} from "./RailReceiptToken.sol";
 
-contract RailStakePositionManager is AccessControl, Pausable, ReentrancyGuard {
+contract RailStakePositionManager is AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
     using DoubleEndedQueue for DoubleEndedQueue.Bytes32Deque;
 
@@ -24,24 +25,57 @@ contract RailStakePositionManager is AccessControl, Pausable, ReentrancyGuard {
     bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
-    IERC20 public immutable rail;
-    IRailgunStaking public immutable staking;
+    IERC20 public rail;
+    IRailgunStaking public staking;
 
     DoubleEndedQueue.Bytes32Deque private activeStakes;
-    RailReceiptToken public immutable activeRail;
-    RailReceiptToken public immutable unlockedRail;
+    RailReceiptToken public activeRail;
+    RailReceiptToken public unlockedRail;
+    uint256[50] private __gap;
 
     event PositionCreated(uint256 indexed stakeId, uint256 principal);
     event PositionQueued(uint256 indexed stakeId, uint256 principal, uint256 locktime);
     event PositionClaimed(uint256 indexed stakeId, uint256 principal, address indexed receiver);
     event TokenTransferred(address indexed token, address indexed receiver, uint256 amount);
 
-    constructor(address admin, IERC20 railToken, IRailgunStaking stakingContract) {
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @param proxyAdminOwner Governance owner of both receipt-token ProxyAdmins, not the setup caller.
+    function initialize(address admin, IERC20 railToken, IRailgunStaking stakingContract, address proxyAdminOwner)
+        external
+        initializer
+    {
+        if (
+            admin == address(0) || address(railToken) == address(0) || address(stakingContract) == address(0)
+                || proxyAdminOwner == address(0)
+        ) revert ZeroAddress();
+        __AccessControl_init();
+        __Pausable_init();
+        __ReentrancyGuard_init();
         rail = railToken;
         staking = stakingContract;
         uint8 decimals = IERC20Metadata(address(railToken)).decimals();
-        activeRail = new RailReceiptToken("Active RAIL", "aRAIL", decimals);
-        unlockedRail = new RailReceiptToken("Unlocked RAIL", "uRAIL", decimals);
+        address implementation = address(new RailReceiptToken());
+        activeRail = RailReceiptToken(
+            address(
+                new TransparentUpgradeableProxy(
+                    implementation,
+                    proxyAdminOwner,
+                    abi.encodeCall(RailReceiptToken.initialize, ("Active RAIL", "aRAIL", decimals, address(this)))
+                )
+            )
+        );
+        unlockedRail = RailReceiptToken(
+            address(
+                new TransparentUpgradeableProxy(
+                    implementation,
+                    proxyAdminOwner,
+                    abi.encodeCall(RailReceiptToken.initialize, ("Unlocked RAIL", "uRAIL", decimals, address(this)))
+                )
+            )
+        );
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 

@@ -31,6 +31,9 @@ contract DeployStakedRail is Script {
         vm.serializeAddress(json, "unlockedRail", address(deployed.manager.unlockedRail()));
         vm.serializeAddress(json, "bagFactory", address(deployed.bagFactory));
         vm.serializeAddress(json, "withdrawalRequest", address(deployed.withdrawalRequest));
+        vm.serializeAddress(json, "requestPolicy", address(deployed.withdrawalRequest.requestPolicy()));
+        vm.serializeAddress(json, "queuedRailProvider", deployed.qRail.provider());
+        vm.serializeAddress(json, "stakedRailProvider", deployed.strategy.provider());
         vm.serializeAddress(json, "withdrawer", address(deployed.withdrawer));
         vm.serializeAddress(json, "resolver", address(deployed.resolver));
         vm.serializeAddress(json, "processor", address(deployed.processor));

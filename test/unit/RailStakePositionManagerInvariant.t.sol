@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
+import {RailManagerDeploymentLib} from "../../script/libraries/RailDeploymentLib.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {RailStakePositionManager} from "../../src/core/RailStakePositionManager.sol";
@@ -115,7 +116,7 @@ contract RailStakePositionManagerInvariantTest is Test {
     function setUp() public {
         rail = new MockERC20("RAIL", "RAIL", 18);
         staking = new MockRailgunStaking(rail);
-        manager = new RailStakePositionManager(address(this), rail, staking);
+        manager = RailManagerDeploymentLib.deploy(address(rail), address(staking), address(this));
         handler = new PositionLifecycleHandler(manager, staking, rail);
         manager.grantRole(manager.CREATOR_ROLE(), address(handler));
         manager.grantRole(manager.QUEUER_ROLE(), address(handler));
