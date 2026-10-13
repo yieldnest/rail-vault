@@ -31,7 +31,6 @@ contract RailStakePositionManager is AccessControlUpgradeable, PausableUpgradeab
     DoubleEndedQueue.Bytes32Deque private activeStakes;
     RailReceiptToken public activeRail;
     RailReceiptToken public unlockedRail;
-    uint256[50] private __gap;
 
     event PositionCreated(uint256 indexed stakeId, uint256 principal);
     event PositionQueued(uint256 indexed stakeId, uint256 principal, uint256 locktime);

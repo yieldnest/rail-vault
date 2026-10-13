@@ -14,7 +14,6 @@ contract TransparentBagFactory is AccessControlUpgradeable, IFactory {
 
     address public implementation;
     address public proxyAdminOwner;
-    uint256[50] private __gap;
 
     error InvalidConfiguration();
     event ProxyCreated(address indexed creator, address indexed proxy, address indexed implementation);

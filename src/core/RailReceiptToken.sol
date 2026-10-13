@@ -6,7 +6,6 @@ import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/
 contract RailReceiptToken is ERC20Upgradeable {
     address public manager;
     uint8 private receiptDecimals;
-    uint256[49] private __gap;
 
     error OnlyManager();
     error ZeroAddress();

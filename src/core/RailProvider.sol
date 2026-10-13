@@ -14,7 +14,6 @@ contract RailProvider is IProvider, Initializable {
     address public activeRail;
     address public unlockedRail;
     uint256 public rate;
-    uint256[50] private __gap;
 
     constructor() {
         _disableInitializers();

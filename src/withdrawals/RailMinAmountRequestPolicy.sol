@@ -7,7 +7,6 @@ import {IRequestPolicy} from "@yieldnest-vault-withdrawals/interface/IRequestPol
 /// @notice Upgradeable equivalent of the withdrawal dependency's minimum-share policy.
 contract RailMinAmountRequestPolicy is Initializable, IRequestPolicy {
     uint256 public minWithdrawalAmount;
-    uint256[50] private __gap;
 
     error AmountBelowMinimum(uint256 amount, uint256 minWithdrawalAmount);
 

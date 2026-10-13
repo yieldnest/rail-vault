@@ -14,7 +14,6 @@ contract SingleAssetFIFOResolver is Initializable {
     WithdrawalRequest public withdrawalRequest;
 
     uint256 public nextRequestToResolve;
-    uint256[50] private __gap;
 
     event RequestResolved(uint256 indexed requestId, uint256 assetAmount);
     error IncompleteRedemption(uint256 requestId, uint256 remainingShares);
