@@ -10,9 +10,7 @@ contract DeployStakedRail is Script {
             admin: vm.envOr("ADMIN", msg.sender),
             rail: vm.envAddress("RAIL"),
             staking: vm.envAddress("RAIL_STAKING"),
-            governorRewards: vm.envAddress("GOVERNOR_REWARDS"),
-            rewardTokens: vm.envAddress("REWARD_TOKENS", ","),
-            nextRewardClaimInterval: vm.envUint("NEXT_REWARD_CLAIM_INTERVAL"),
+            splitsSwapper: vm.envAddress("SPLITS_SWAPPER"),
             stakeChunkSize: vm.envOr("STAKE_CHUNK_SIZE", uint256(1000 ether)),
             unpause: vm.envOr("UNPAUSE", false)
         });
@@ -39,6 +37,8 @@ contract DeployStakedRail is Script {
         vm.serializeAddress(json, "processor", address(deployed.processor));
         vm.serializeAddress(json, "queuedRailProcessor", address(deployed.queuedRailProcessor));
         vm.serializeAddress(json, "rewardsProcessor", address(deployed.rewardsProcessor));
+        vm.serializeAddress(json, "splitsSwapper", deployed.rewardsProcessor.splitsSwapper());
+        vm.serializeAddress(json, "railRewardReceiver", deployed.rewardsProcessor.railReceiver());
         string memory output = vm.serializeAddress(json, "strategy", address(deployed.strategy));
         vm.writeJson(output, string.concat("deployments/staked-rail-", vm.toString(block.chainid), ".json"));
     }

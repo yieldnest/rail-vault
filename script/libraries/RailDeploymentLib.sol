@@ -14,7 +14,6 @@ import {RailProvider} from "../../src/core/RailProvider.sol";
 import {StakedRailStrategy} from "../../src/core/StakedRailStrategy.sol";
 import {RailStakePositionManager} from "../../src/core/RailStakePositionManager.sol";
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
-import {IRailgunGovernorRewards} from "../../src/railgun/IRailgunGovernorRewards.sol";
 import {StakedRailProcessor} from "../../src/processors/StakedRailProcessor.sol";
 import {QueuedRailProcessor} from "../../src/processors/QueuedRailProcessor.sol";
 import {RailRewardsProcessor} from "../../src/processors/RailRewardsProcessor.sol";
@@ -198,13 +197,10 @@ library RailProcessorsDeploymentLib {
         return new QueuedRailProcessor(address(this), qRail, manager);
     }
 
-    function deployRewardsProcessor(
-        address admin,
-        address rewards,
-        RailStakePositionManager manager,
-        IERC20[] memory tokens,
-        uint256 interval
-    ) external returns (RailRewardsProcessor) {
-        return new RailRewardsProcessor(admin, IRailgunGovernorRewards(rewards), manager, tokens, interval);
+    function deployRewardsProcessor(RailStakePositionManager manager, address splitsSwapper)
+        external
+        returns (RailRewardsProcessor)
+    {
+        return new RailRewardsProcessor(manager, splitsSwapper);
     }
 }

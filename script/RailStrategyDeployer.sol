@@ -35,9 +35,7 @@ contract RailStrategyDeployer {
         address admin;
         address rail;
         address staking;
-        address governorRewards;
-        address[] rewardTokens;
-        uint256 nextRewardClaimInterval;
+        address splitsSwapper;
         uint256 stakeChunkSize;
         bool unpause;
     }
@@ -142,13 +140,8 @@ contract RailStrategyDeployer {
         result.processor =
             RailProcessorsDeploymentLib.deployStakedProcessor(settings.admin, result.strategy, settings.stakeChunkSize);
         result.queuedRailProcessor = RailProcessorsDeploymentLib.deployQueuedProcessor(result.qRail, result.manager);
-        result.rewardsProcessor = RailProcessorsDeploymentLib.deployRewardsProcessor(
-            settings.admin,
-            settings.governorRewards,
-            result.manager,
-            _toIERC20Array(settings.rewardTokens),
-            settings.nextRewardClaimInterval
-        );
+        result.rewardsProcessor =
+            RailProcessorsDeploymentLib.deployRewardsProcessor(result.manager, settings.splitsSwapper);
     }
 
     function _wire(Config memory settings, Deployed memory result) private {
@@ -226,12 +219,5 @@ contract RailStrategyDeployer {
         rule.isActive = true;
         rule.paramRules = new IVault.ParamRule[](0);
         rule.validator = IValidator(address(0));
-    }
-
-    function _toIERC20Array(address[] memory tokens) private pure returns (IERC20[] memory erc20Tokens) {
-        erc20Tokens = new IERC20[](tokens.length);
-        for (uint256 i = 0; i < tokens.length; i++) {
-            erc20Tokens[i] = IERC20(tokens[i]);
-        }
     }
 }

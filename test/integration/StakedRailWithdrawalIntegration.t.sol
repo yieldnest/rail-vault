@@ -19,6 +19,7 @@ import {SingleAssetFIFOResolver} from "../../src/withdrawals/SingleAssetFIFOReso
 
 import {RailStrategyDeployer} from "../../script/RailStrategyDeployer.sol";
 import {RailRewardsProcessor} from "../../src/processors/RailRewardsProcessor.sol";
+import {MockSplitsSwapper} from "../mocks/MockSplitsSwapper.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
@@ -61,16 +62,12 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         rewardsProcessor = result.rewardsProcessor;
     }
 
-    function _config(address admin, bool unpause) internal view returns (RailStrategyDeployer.Config memory config) {
-        address[] memory tokens = new address[](1);
-        tokens[0] = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    function _config(address admin, bool unpause) internal returns (RailStrategyDeployer.Config memory config) {
         config = RailStrategyDeployer.Config({
             admin: admin,
             rail: address(rail),
             staking: address(staking),
-            governorRewards: 0xA02782CE1bF85f56f8cC7C0E66e61299Ac75c86f,
-            rewardTokens: tokens,
-            nextRewardClaimInterval: 0,
+            splitsSwapper: address(new MockSplitsSwapper(admin, address(rail))),
             stakeChunkSize: 1000 ether,
             unpause: unpause
         });
@@ -183,15 +180,14 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertFalse(bagFactory.hasRole(bagFactory.CREATOR_ROLE(), bootstrap));
         assertFalse(requests.hasRole(requests.RESOLVER_ROLE(), address(this)));
 
-        address[8] memory components = [
+        address[7] memory components = [
             address(manager),
             address(strategy),
             address(qRail),
             address(bagFactory),
             address(requests),
             address(processor),
-            address(queuedRailProcessor),
-            address(rewardsProcessor)
+            address(queuedRailProcessor)
         ];
         for (uint256 i; i < components.length; i++) {
             assertTrue(IAccessControl(components[i]).hasRole(bytes32(0), address(this)));

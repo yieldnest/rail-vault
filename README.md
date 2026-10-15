@@ -13,7 +13,7 @@ Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 - `src/core/RailReceiptToken.sol`: minimal OZ ERC20 used for ActiveRail and UnlockedRail; only the position manager can mint or burn.
 - `src/processors/StakedRailProcessor.sol`: permissionless chunked staking and qRAIL exits through stRAIL's processor.
 - `src/core/RailStakePositionManager.sol`: records RAILGUN stake IDs, issues/burns principal receipts, queues full positions, and claims matured stakes.
-- `src/processors/RailRewardsProcessor.sol`: claims rewards directly from RAILGUN and collects manager token balances through `TOKEN_WITHDRAWER_ROLE`. Keepers can independently collect any ERC20 and forward collected tokens; swaps and auto-compounding remain unimplemented.
+- `src/processors/RailRewardsProcessor.sol`: permissionless forwarding of already-claimed manager balances to a fixed Splits Swapper; RAIL bypasses swapping and goes to its configured beneficiary. No harvesting, keeper role or arbitrary transfers.
 - `lib/yieldnest-vault-withdrawals/src/withdrawers/BaseWithdrawer.sol`: existing YieldNest adapter plugged directly into `WithdrawalRequest` for qRAIL redemptions.
 - `src/processors/QueuedRailProcessor.sol`: claims matured RAIL into qRAIL through its processor.
 - `src/withdrawals/SingleAssetFIFOResolver.sol`: permissionless FIFO settlement of qRAIL withdrawal requests.
@@ -37,7 +37,7 @@ tests against `ETH_MAINNET_RPC_URL` from `.env`. To pin the fork, pass
 Deploy with:
 
 ```sh
-RAIL=0x... RAIL_STAKING=0x... forge script script/DeployStakedRail.s.sol --rpc-url $RPC_URL --broadcast
+RAIL=0x... RAIL_STAKING=0x... SPLITS_SWAPPER=0x... forge script script/DeployStakedRail.s.sol --rpc-url $RPC_URL --broadcast
 ```
 
 Optional deployment environment variables:
@@ -57,6 +57,44 @@ the target network's limits. Passing fork tests alone does not establish that
 the implementations and linked libraries meet on-chain deployment limits.
 
 ## Notes
+
+### Reward forwarding
+
+Deploy and configure a Splits **Swapper instance** separately, with RAIL as
+`tokenToBeneficiary` and the intended reward receiver as `beneficiary`. Set
+`SPLITS_SWAPPER` to that instance, not the factory or callback integration.
+The rewards processor validates the output token at construction and stores both
+the swapper and beneficiary as immutable destinations. Keep this Splits output
+configuration unchanged; changing it requires replacing the forwarder and updating
+the manager's `TOKEN_WITHDRAWER_ROLE`. Splits ownership and oracle configuration
+remain trusted governance responsibilities.
+
+Anyone can claim on the Railgun rewards distributor for the position manager,
+then anyone can call `collectTokens(tokens)` on the processor. Non-RAIL tokens go
+directly from the manager to Splits; RAIL goes directly to the fixed beneficiary.
+There is no token registry, claim cursor, keeper role, custody step or arbitrary
+recipient parameter. Do not send funds to the processor itself. Duplicate tokens
+and zero balances are harmless; a failing token reverts the batch, so retry other
+tokens separately. Unsupported reward tokens still require Splits oracle/pricing
+configuration before they can be exchanged.
+
+Funding Splits does **not** execute a swap. A separate permissionless trader calls
+its integration to settle into RAIL. Neither restaking nor shareholder reward
+allocation/accounting is implemented here; choose the beneficiary deliberately
+rather than assuming a vault donation safely compounds rewards.
+
+Unit/deployer tests use a mock Splits funding destination. The mainnet fork tests
+also create test-owned instances through the deployed Splits Swapper and UniV3
+oracle factories, and execute the deployed UniV3 integration against the real
+RAIL/WETH 1% pool. They cover separate Railgun claiming and forwarding, WETH-to-RAIL
+settlement, oracle-underpayment rollback, and RAIL bypass. No mainnet transactions
+are sent. The 30-minute TWAP and 95% offer factor are test settings, not production
+recommendations; DAI/other-token pricing and routing are not covered by this test.
+
+```sh
+FOUNDRY_PROFILE=mainnet forge test --fork-url "$ETH_MAINNET_RPC_URL" --fork-block-number 26195542 --match-contract RailRewardsSplitsIntegrationTest -vv
+FOUNDRY_PROFILE=mainnet forge test --fork-url "$ETH_MAINNET_RPC_URL" --fork-block-number 26195542 --match-test testCollectRealRewardsAfterPermissionlessClaim -vv
+```
 
 ### Upgradeability
 

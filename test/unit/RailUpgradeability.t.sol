@@ -20,7 +20,7 @@ import {TransparentBagFactory} from "../../src/withdrawals/TransparentBagFactory
 import {RailMinAmountRequestPolicy} from "../../src/withdrawals/RailMinAmountRequestPolicy.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockRailgunStaking} from "../mocks/MockRailgunStaking.sol";
-import {MockRailgunGovernorRewards} from "../mocks/MockRailgunGovernorRewards.sol";
+import {MockSplitsSwapper} from "../mocks/MockSplitsSwapper.sol";
 
 contract RailManagerV2 is RailStakePositionManager {
     uint256 public upgradeMarker;
@@ -37,22 +37,21 @@ contract RailUpgradeabilityTest is Test {
     address alice = makeAddr("alice");
     MockERC20 rail;
     MockRailgunStaking staking;
-    MockRailgunGovernorRewards rewards;
+    MockSplitsSwapper splits;
     RailStrategyDeployer deployer;
     RailStrategyDeployer.Deployed d;
 
     function setUp() public {
         rail = new MockERC20("RAIL", "RAIL", 18);
         staking = new MockRailgunStaking(rail);
-        rewards = new MockRailgunGovernorRewards();
+        splits = new MockSplitsSwapper(governance, address(rail));
         deployer = new RailStrategyDeployer(_config());
         d = deployer.deploy();
     }
 
     function _config() internal view returns (RailStrategyDeployer.Config memory) {
-        return RailStrategyDeployer.Config(
-            governance, address(rail), address(staking), address(rewards), new address[](0), 0, 1000 ether, true
-        );
+        return
+            RailStrategyDeployer.Config(governance, address(rail), address(staking), address(splits), 1000 ether, true);
     }
 
     function _proxies(RailStrategyDeployer.Deployed memory s) internal view returns (address[] memory p) {

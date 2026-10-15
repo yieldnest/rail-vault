@@ -9,6 +9,8 @@ import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEnde
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 import {RailStakePositionManager} from "../../src/core/RailStakePositionManager.sol";
 import {IRailgunGovernorRewards} from "../../src/railgun/IRailgunGovernorRewards.sol";
+import {RailRewardsProcessor} from "../../src/processors/RailRewardsProcessor.sol";
+import {SplitsMainnet} from "../utils/SplitsMainnet.sol";
 
 interface IMainnetGovernorRewards is IRailgunGovernorRewards {
     function currentInterval() external view returns (uint256);
@@ -483,7 +485,9 @@ contract RailStakePositionManagerIntegrationTest is Test {
         IMainnetGovernorRewards rewards = IMainnetGovernorRewards(0xA02782CE1bF85f56f8cC7C0E66e61299Ac75c86f);
         IERC20 weth = IERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
         assertTrue(rewards.tokens(weth));
-        manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), keeper);
+        (address splits,) = SplitsMainnet.create(receiver);
+        RailRewardsProcessor forwarder = new RailRewardsProcessor(manager, splits);
+        manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), address(forwarder));
         _create(1000 ether);
 
         uint256 interval = rewards.currentInterval() + 1;
@@ -497,16 +501,17 @@ contract RailStakePositionManagerIntegrationTest is Test {
         uint256 expected = rewards.calculateRewards(tokens, address(manager), interval, interval, hints, true)[0];
         assertGt(expected, 0);
         deal(address(weth), address(manager), 1 ether);
-        uint256 balanceBefore = weth.balanceOf(receiver);
+        uint256 balanceBefore = weth.balanceOf(address(splits));
         vm.prank(makeAddr("permissionlessClaimer"));
         rewards.claim(tokens, address(manager), interval, interval, hints);
         assertEq(weth.balanceOf(address(manager)), 1 ether + expected);
         // A repeated claim pays nothing, but collection still retrieves the earlier payout.
         rewards.claim(tokens, address(manager), interval, interval, hints);
-        uint256 amount = weth.balanceOf(address(manager));
-        vm.prank(keeper);
-        manager.transferToken(weth, receiver, amount);
-        assertEq(weth.balanceOf(receiver) - balanceBefore, expected + 1 ether);
+        vm.prank(makeAddr("permissionlessForwarder"));
+        uint256[] memory amounts = forwarder.collectTokens(tokens);
+        assertEq(amounts[0], expected + 1 ether);
+        assertEq(weth.balanceOf(address(splits)) - balanceBefore, expected + 1 ether);
+        assertEq(weth.balanceOf(address(forwarder)), 0);
         assertEq(weth.balanceOf(address(manager)), 0);
         _assertAccounting();
     }
