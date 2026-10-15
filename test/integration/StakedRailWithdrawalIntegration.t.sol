@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
-import {TransparentBagFactory} from "../../src/withdrawals/TransparentBagFactory.sol";
+import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 import {IBag} from "@yieldnest-vault-withdrawals/interface/IBag.sol";
 
@@ -34,7 +34,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     QueuedRailStrategy internal qRail;
     RailStakePositionManager internal manager;
     StakedRailStrategy internal strategy;
-    TransparentBagFactory internal bagFactory;
+    BeaconProxyFactory internal bagFactory;
     WithdrawalRequest internal requests;
     BaseWithdrawer internal withdrawer;
     SingleAssetFIFOResolver internal resolver;

@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {Bag} from "@yieldnest-vault-withdrawals/Bag.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
@@ -16,8 +17,8 @@ import {RailProvider} from "../../src/core/RailProvider.sol";
 import {StakedRailStrategy} from "../../src/core/StakedRailStrategy.sol";
 import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
 import {SingleAssetFIFOResolver} from "../../src/withdrawals/SingleAssetFIFOResolver.sol";
-import {TransparentBagFactory} from "../../src/withdrawals/TransparentBagFactory.sol";
-import {RailMinAmountRequestPolicy} from "../../src/withdrawals/RailMinAmountRequestPolicy.sol";
+import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
+import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockRailgunStaking} from "../mocks/MockRailgunStaking.sol";
 import {MockSplitsSwapper} from "../mocks/MockSplitsSwapper.sol";
@@ -30,9 +31,16 @@ contract RailManagerV2 is RailStakePositionManager {
     }
 }
 
+contract BagV2 is Bag {
+    function versionMarker() external pure returns (uint256) {
+        return 2;
+    }
+}
+
 contract RailUpgradeabilityTest is Test {
     bytes32 constant ADMIN_SLOT = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
     bytes32 constant IMPLEMENTATION_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+    bytes32 constant BEACON_SLOT = bytes32(uint256(keccak256("eip1967.proxy.beacon")) - 1);
     address governance = makeAddr("governance");
     address alice = makeAddr("alice");
     MockERC20 rail;
@@ -55,7 +63,7 @@ contract RailUpgradeabilityTest is Test {
     }
 
     function _proxies(RailStrategyDeployer.Deployed memory s) internal view returns (address[] memory p) {
-        p = new address[](12);
+        p = new address[](11);
         p[0] = address(s.manager);
         p[1] = address(s.manager.activeRail());
         p[2] = address(s.manager.unlockedRail());
@@ -67,7 +75,6 @@ contract RailUpgradeabilityTest is Test {
         p[8] = address(s.withdrawalRequest);
         p[9] = address(s.withdrawer);
         p[10] = address(s.resolver);
-        p[11] = address(s.withdrawalRequest.requestPolicy());
     }
 
     function _implementation(address proxy) internal view returns (address) {
@@ -85,7 +92,7 @@ contract RailUpgradeabilityTest is Test {
         assertEq(_implementation(proxy), implementation);
     }
 
-    function testAllRuntimeContractsAreTupExceptProcessors() external view {
+    function testProxyTypesAndNonUpgradeableComponents() external view {
         address[] memory proxies = _proxies(d);
         for (uint256 i; i < proxies.length; ++i) {
             assertGt(_implementation(proxies[i]).code.length, 0);
@@ -94,17 +101,20 @@ contract RailUpgradeabilityTest is Test {
         assertEq(_implementation(address(d.processor)), address(0));
         assertEq(_implementation(address(d.queuedRailProcessor)), address(0));
         assertEq(_implementation(address(d.rewardsProcessor)), address(0));
+        assertEq(_implementation(address(d.withdrawalRequest.requestPolicy())), address(0));
+        assertEq(address(_admin(address(d.withdrawalRequest.requestPolicy()))), address(0));
         assertEq(d.manager.activeRail().manager(), address(d.manager));
         assertEq(d.manager.unlockedRail().manager(), address(d.manager));
         assertTrue(d.manager.hasRole(bytes32(0), governance));
         assertFalse(d.manager.hasRole(bytes32(0), address(deployer)));
         assertFalse(d.bagFactory.hasRole(bytes32(0), address(deployer)));
-        assertEq(d.bagFactory.proxyAdminOwner(), governance);
+        assertEq(UpgradeableBeacon(d.bagFactory.beacon()).owner(), address(d.bagFactory));
+        assertTrue(d.bagFactory.hasRole(d.bagFactory.IMPLEMENTATION_MANAGER_ROLE(), governance));
     }
 
     function testInitializersLockedOnImplementationsAndProxies() external {
         address[] memory proxies = _proxies(d);
-        bytes[] memory calls = new bytes[](12);
+        bytes[] memory calls = new bytes[](11);
         calls[0] = abi.encodeCall(RailStakePositionManager.initialize, (governance, rail, staking, governance));
         calls[1] = abi.encodeCall(RailReceiptToken.initialize, ("Active RAIL", "aRAIL", 18, address(d.manager)));
         calls[2] = abi.encodeCall(RailReceiptToken.initialize, ("Unlocked RAIL", "uRAIL", 18, address(d.manager)));
@@ -122,7 +132,7 @@ contract RailUpgradeabilityTest is Test {
             RailProvider.initialize, (address(rail), address(0), address(d.manager.unlockedRail()), address(0))
         );
         calls[7] = abi.encodeCall(
-            TransparentBagFactory.initialize, (d.bagFactory.implementation(), governance, governance, governance)
+            BeaconProxyFactory.initialize, (d.bagFactory.implementation(), governance, governance, governance)
         );
         calls[8] = abi.encodeCall(
             WithdrawalRequest.initialize,
@@ -141,7 +151,6 @@ contract RailUpgradeabilityTest is Test {
         calls[9] = abi.encodeCall(BaseWithdrawer.initialize, (address(d.qRail), address(d.withdrawalRequest)));
         calls[10] =
             abi.encodeCall(SingleAssetFIFOResolver.initialize, (IERC4626(address(d.qRail)), d.withdrawalRequest));
-        calls[11] = abi.encodeCall(RailMinAmountRequestPolicy.initialize, (1));
         for (uint256 i; i < proxies.length; ++i) {
             _assertLocked(proxies[i], calls[i]);
             _assertLocked(_implementation(proxies[i]), calls[i]);
@@ -184,7 +193,8 @@ contract RailUpgradeabilityTest is Test {
 
     function testUpgradeAllContractsPreservesLivePositionsAndWithdrawal() external {
         (uint256 id, address bag) = _createPendingWithdrawal();
-        assertEq(_admin(bag).owner(), governance);
+        assertEq(address(uint160(uint256(vm.load(bag, BEACON_SLOT)))), d.bagFactory.beacon());
+        assertEq(address(_admin(bag)), address(0));
         _assertLocked(bag, abi.encodeCall(Bag.initialize, (address(d.withdrawalRequest), id)));
         RailStrategyDeployer otherDeployer = new RailStrategyDeployer(_config());
         RailStrategyDeployer.Deployed memory other = otherDeployer.deploy();
@@ -193,7 +203,10 @@ contract RailUpgradeabilityTest is Test {
         for (uint256 i; i < proxies.length; ++i) {
             _upgrade(proxies[i], _implementation(replacements[i]));
         }
-        _upgrade(bag, address(new Bag()));
+        address newBagImplementation = address(new BagV2());
+        vm.prank(governance);
+        d.bagFactory.upgradeImplementation(newBagImplementation);
+        assertEq(BagV2(payable(bag)).versionMarker(), 2);
         assertEq(Bag(payable(bag)).auth(), address(d.withdrawalRequest));
         assertEq(Bag(payable(bag)).id(), id);
         assertEq(d.strategy.balanceOf(alice), 2000 ether);
@@ -205,7 +218,7 @@ contract RailUpgradeabilityTest is Test {
         assertEq(address(d.strategy.positionManager()), address(d.manager));
         assertEq(d.withdrawalRequest.ownerOf(id), alice);
         assertEq(RailProvider(d.strategy.provider()).getRate(address(rail)), 1 ether);
-        assertEq(RailMinAmountRequestPolicy(address(d.withdrawalRequest.requestPolicy())).minWithdrawalAmount(), 1);
+        assertEq(MinAmountRequestPolicy(address(d.withdrawalRequest.requestPolicy())).minWithdrawalAmount(), 1);
         vm.warp(block.timestamp + 30 days + 1);
         uint256[] memory ids = new uint256[](1);
         ids[0] = 0;
@@ -249,19 +262,29 @@ contract RailUpgradeabilityTest is Test {
         manager.initializeV2(43);
     }
 
-    function testBagTemplateChangeOnlyAffectsFutureBags() external {
-        (, address bag) = _createPendingWithdrawal();
-        address original = _implementation(bag);
-        address replacement = address(new Bag());
+    function testBeaconUpgradeUpdatesExistingAndFutureBags() external {
+        (uint256 id, address bag) = _createPendingWithdrawal();
+        address replacement = address(new BagV2());
+        UpgradeableBeacon beacon = UpgradeableBeacon(d.bagFactory.beacon());
+        vm.expectRevert();
+        vm.prank(alice);
+        d.bagFactory.upgradeImplementation(replacement);
+        vm.expectRevert();
+        vm.prank(alice);
+        beacon.upgradeTo(replacement);
         vm.prank(governance);
         d.bagFactory.upgradeImplementation(replacement);
-        assertEq(_implementation(bag), original);
+        assertEq(BagV2(payable(bag)).versionMarker(), 2);
+        assertEq(Bag(payable(bag)).id(), id);
+        assertEq(Bag(payable(bag)).auth(), address(d.withdrawalRequest));
         assertEq(d.bagFactory.implementation(), replacement);
         bytes32 creatorRole = d.bagFactory.CREATOR_ROLE();
         vm.prank(governance);
         d.bagFactory.grantRole(creatorRole, address(this));
         address nextBag = d.bagFactory.create(abi.encodeCall(Bag.initialize, (address(d.withdrawalRequest), 123)));
-        assertEq(_implementation(nextBag), replacement);
-        assertEq(_admin(nextBag).owner(), governance);
+        assertEq(BagV2(payable(nextBag)).versionMarker(), 2);
+        assertEq(Bag(payable(nextBag)).id(), 123);
+        assertEq(address(uint160(uint256(vm.load(nextBag, BEACON_SLOT)))), d.bagFactory.beacon());
+        assertEq(address(_admin(nextBag)), address(0));
     }
 }

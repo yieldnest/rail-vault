@@ -9,10 +9,10 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 import {IValidator} from "@yieldnest-vault/interface/IValidator.sol";
 import {Bag} from "@yieldnest-vault-withdrawals/Bag.sol";
-import {TransparentBagFactory} from "../../src/withdrawals/TransparentBagFactory.sol";
+import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
 import {IBag} from "@yieldnest-vault-withdrawals/interface/IBag.sol";
-import {RailMinAmountRequestPolicy} from "../../src/withdrawals/RailMinAmountRequestPolicy.sol";
+import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
 
 import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
 import {RailProvider} from "../../src/core/RailProvider.sol";
@@ -36,7 +36,7 @@ contract StakedRailStrategyTest is Test {
     QueuedRailStrategy qRail;
     RailStakePositionManager manager;
     StakedRailStrategy strategy;
-    TransparentBagFactory bagFactory;
+    BeaconProxyFactory bagFactory;
     WithdrawalRequest requests;
     BaseWithdrawer withdrawer;
     SingleAssetFIFOResolver resolver;
@@ -91,29 +91,21 @@ contract StakedRailStrategyTest is Test {
 
         StakedRailSetupLib.configure(strategy, address(rail), address(this));
         Bag bagImplementation = new Bag();
-        TransparentBagFactory bagFactoryImplementation = new TransparentBagFactory();
-        bagFactory = TransparentBagFactory(
+        BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
+        bagFactory = BeaconProxyFactory(
             address(
                 new TransparentUpgradeableProxy(
                     address(bagFactoryImplementation),
                     makeAddr("bagFactoryProxyAdmin"),
                     abi.encodeCall(
-                        TransparentBagFactory.initialize,
+                        BeaconProxyFactory.initialize,
                         (address(bagImplementation), address(this), address(this), address(this))
                     )
                 )
             )
         );
 
-        RailMinAmountRequestPolicy requestPolicy = RailMinAmountRequestPolicy(
-            address(
-                new TransparentUpgradeableProxy(
-                    address(new RailMinAmountRequestPolicy()),
-                    address(this),
-                    abi.encodeCall(RailMinAmountRequestPolicy.initialize, (1))
-                )
-            )
-        );
+        MinAmountRequestPolicy requestPolicy = new MinAmountRequestPolicy(1);
         WithdrawalRequest requestImplementation = new WithdrawalRequest();
         requests = WithdrawalRequest(
             payable(address(

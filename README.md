@@ -100,17 +100,18 @@ FOUNDRY_PROFILE=mainnet forge test --fork-url "$ETH_MAINNET_RPC_URL" --fork-bloc
 
 New deployments use OpenZeppelin TransparentUpgradeableProxy (TUP) instances for
 stRAIL, qRAIL, the position manager, aRAIL/uRAIL receipts, both providers, withdrawal
-requests, the withdrawer, FIFO resolver, minimum-amount policy and bag factory.
-Every withdrawal bag is also a TUP. Each proxy has its own ProxyAdmin, initially
-owned by `ADMIN`; operational roles do not grant upgrade authority. Initializers
+requests, the withdrawer, FIFO resolver and bag factory.
+Each TUP has its own ProxyAdmin, initially owned by `ADMIN`. Initializers
 run atomically during proxy creation and implementation initializers are disabled.
 
-`TransparentBagFactory` replaces the shared beacon factory. Its
-`upgradeImplementation` changes the template for **future bags only**; existing
-bags must be upgraded individually through their ProxyAdmins. This costs more gas
-per withdrawal request than a shared beacon deployment.
+Withdrawal bags retain the existing `BeaconProxyFactory` architecture: the factory
+itself is a TUP, while bags are beacon proxies sharing a factory-owned beacon.
+`ADMIN` holds the factory's `IMPLEMENTATION_MANAGER_ROLE`; calling
+`upgradeImplementation` upgrades all existing bags and the implementation used by
+future bags. Bags do not have individual ProxyAdmins.
 
-The three processors remain constructor-based, non-upgradeable contracts. External
+The three processors and the dependency's original `MinAmountRequestPolicy` remain
+constructor-based, non-upgradeable contracts. External
 RAIL/RAILGUN contracts, deployment libraries and the single-use deployment helper
 are not converted. This is a fresh-deployment layout, not an in-place migration of
 old direct deployments or beacon factories. Future upgrades must preserve storage

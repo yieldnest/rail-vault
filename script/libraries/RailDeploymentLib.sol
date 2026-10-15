@@ -5,9 +5,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {Bag} from "@yieldnest-vault-withdrawals/Bag.sol";
-import {TransparentBagFactory} from "../../src/withdrawals/TransparentBagFactory.sol";
+import {BeaconProxyFactory} from "@yieldnest-vault-withdrawals/BeaconProxyFactory.sol";
 import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.sol";
-import {RailMinAmountRequestPolicy} from "../../src/withdrawals/RailMinAmountRequestPolicy.sol";
+import {MinAmountRequestPolicy} from "@yieldnest-vault-withdrawals/policies/MinAmountRequestPolicy.sol";
 import {BaseWithdrawer} from "@yieldnest-vault-withdrawals/withdrawers/BaseWithdrawer.sol";
 import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
 import {RailProvider} from "../../src/core/RailProvider.sol";
@@ -102,17 +102,15 @@ library RailManagerDeploymentLib {
 }
 
 library WithdrawalSupportDeploymentLib {
-    function deployBagFactory(address admin) external returns (TransparentBagFactory) {
+    function deployBagFactory(address admin) external returns (BeaconProxyFactory) {
         Bag bag = new Bag();
-        TransparentBagFactory implementation = new TransparentBagFactory();
-        return TransparentBagFactory(
+        BeaconProxyFactory implementation = new BeaconProxyFactory();
+        return BeaconProxyFactory(
             address(
                 new TransparentUpgradeableProxy(
                     address(implementation),
                     admin,
-                    abi.encodeCall(
-                        TransparentBagFactory.initialize, (address(bag), address(this), address(this), admin)
-                    )
+                    abi.encodeCall(BeaconProxyFactory.initialize, (address(bag), address(this), address(this), admin))
                 )
             )
         );
@@ -133,15 +131,7 @@ library WithdrawalSupportDeploymentLib {
 library WithdrawalRequestDeploymentLib {
     function deploy(address admin, address qRail, address bagFactory) external returns (WithdrawalRequest) {
         WithdrawalRequest implementation = new WithdrawalRequest();
-        RailMinAmountRequestPolicy policy = RailMinAmountRequestPolicy(
-            address(
-                new TransparentUpgradeableProxy(
-                    address(new RailMinAmountRequestPolicy()),
-                    admin,
-                    abi.encodeCall(RailMinAmountRequestPolicy.initialize, (1))
-                )
-            )
-        );
+        MinAmountRequestPolicy policy = new MinAmountRequestPolicy(1);
         return WithdrawalRequest(
             payable(address(
                     new TransparentUpgradeableProxy(
