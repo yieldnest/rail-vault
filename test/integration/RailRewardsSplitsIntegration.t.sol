@@ -3,7 +3,16 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {RailManagerDeploymentLib} from "../../script/libraries/RailDeploymentLib.sol";
+import {
+    RailManagerDeploymentLib,
+    QueuedRailDeploymentLib,
+    QueuedRailSetupLib,
+    StakedRailDeploymentLib,
+    StakedRailSetupLib
+} from "../../script/libraries/RailDeploymentLib.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {StakedRailStrategy} from "../../src/core/StakedRailStrategy.sol";
+import {QueuedRailStrategy} from "../../src/core/QueuedRailStrategy.sol";
 import {RailStakePositionManager} from "../../src/core/RailStakePositionManager.sol";
 import {RailRewardsProcessor} from "../../src/processors/RailRewardsProcessor.sol";
 import {
@@ -18,7 +27,8 @@ import {
 contract RailRewardsSplitsIntegrationTest is Test {
     address constant STAKING = 0xEE6A649Aa3766bD117e12C161726b693A1B2Ee20;
     uint128 constant AMOUNT = 0.01 ether;
-    address beneficiary = makeAddr("beneficiary");
+    address beneficiary;
+    StakedRailStrategy stRail;
     address collector = makeAddr("permissionlessCollector");
     address trader = makeAddr("permissionlessTrader");
     RailStakePositionManager manager;
@@ -27,8 +37,35 @@ contract RailRewardsSplitsIntegrationTest is Test {
     address oracle;
 
     function setUp() external {
-        (swapper, oracle) = SplitsMainnet.create(beneficiary);
         manager = RailManagerDeploymentLib.deploy(SplitsMainnet.RAIL, STAKING, address(this));
+        QueuedRailStrategy qRail = QueuedRailStrategy(
+            payable(address(
+                    new TransparentUpgradeableProxy(
+                        QueuedRailDeploymentLib.deployImplementation(),
+                        address(this),
+                        abi.encodeCall(
+                            QueuedRailStrategy.initialize,
+                            (address(this), "Queued RAIL", "qRAIL", 18, false, false, true, 0)
+                        )
+                    )
+                ))
+        );
+        QueuedRailSetupLib.configure(qRail, SplitsMainnet.RAIL, address(manager.unlockedRail()), address(this));
+        stRail = StakedRailStrategy(
+            payable(address(
+                    new TransparentUpgradeableProxy(
+                        StakedRailDeploymentLib.deployImplementation(),
+                        address(this),
+                        abi.encodeCall(
+                            StakedRailStrategy.initialize,
+                            (address(this), "Staked RAIL", "stRAIL", 18, true, false, true, 0, manager, qRail)
+                        )
+                    )
+                ))
+        );
+        StakedRailSetupLib.configure(stRail, SplitsMainnet.RAIL, address(this));
+        beneficiary = address(stRail);
+        (swapper, oracle) = SplitsMainnet.create(beneficiary);
         processor = new RailRewardsProcessor(manager, swapper);
         manager.grantRole(manager.TOKEN_WITHDRAWER_ROLE(), address(processor));
         assertEq(processor.splitsSwapper(), swapper);
@@ -75,6 +112,9 @@ contract RailRewardsSplitsIntegrationTest is Test {
         vm.prank(trader);
         ISplitsUniV3Mainnet(SplitsMainnet.INTEGRATION).initFlash(swapper, params);
         assertEq(IERC20(SplitsMainnet.RAIL).balanceOf(beneficiary) - beforeBalance, required);
+        assertEq(stRail.totalBaseAssets(), required);
+        // Receipt of rewards is a transfer, not a share-minting deposit or a restake.
+        assertEq(stRail.totalSupply(), 0);
         assertGt(IERC20(SplitsMainnet.RAIL).balanceOf(trader), 0);
         assertEq(IERC20(SplitsMainnet.WETH).balanceOf(swapper), 0);
         assertEq(IERC20(SplitsMainnet.RAIL).balanceOf(address(processor)), 0);
@@ -102,6 +142,7 @@ contract RailRewardsSplitsIntegrationTest is Test {
         vm.prank(collector);
         processor.collectTokens(tokens);
         assertEq(IERC20(SplitsMainnet.RAIL).balanceOf(beneficiary), 10 ether);
+        assertEq(stRail.totalBaseAssets(), 10 ether);
         assertEq(IERC20(SplitsMainnet.RAIL).balanceOf(swapper), 0);
     }
 }
