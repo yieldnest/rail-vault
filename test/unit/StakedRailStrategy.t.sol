@@ -172,6 +172,57 @@ contract StakedRailStrategyTest is Test {
         strategy.unpause();
     }
 
+    function testWithdrawalFeeConfigurationAndRounding() external {
+        assertEq(strategy.baseWithdrawalFee(), 0);
+        bytes32 role = strategy.FEE_MANAGER_ROLE();
+        vm.expectRevert(abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", user, role));
+        vm.prank(user);
+        strategy.setBaseWithdrawalFee(10_000);
+        strategy.grantRole(role, address(this));
+        strategy.setBaseWithdrawalFee(10_000);
+        assertEq(strategy.baseWithdrawalFee(), 10_000);
+        assertEq(strategy._feeOnRaw(1, user), 1);
+        assertEq(strategy._feeOnTotal(1, user), 1);
+        vm.expectRevert(abi.encodeWithSelector(IVault.ExceedsMaxBasisPoints.selector, uint256(100_000_001)));
+        strategy.setBaseWithdrawalFee(100_000_001);
+    }
+
+    function testWithdrawalFeeRetainedOnDirectAndProcessorRedemption() external {
+        strategy.grantRole(strategy.FEE_MANAGER_ROLE(), address(this));
+        strategy.setBaseWithdrawalFee(10_000);
+        _deposit(user, 3000 ether);
+        processor.rebalanceStaking(3);
+        _queueThroughStrategy();
+
+        uint256 gross = strategy.convertToAssets(1000 ether);
+        uint256 expected = gross - strategy._feeOnTotal(gross, user);
+        vm.prank(user);
+        assertEq(strategy.redeemAsset(address(qRail), 1000 ether, user, user), expected);
+        assertEq(qRail.balanceOf(address(strategy)), gross - expected);
+        assertGt(strategy.convertToAssets(1 ether), 1 ether);
+
+        gross = strategy.convertToAssets(1000 ether);
+        expected = gross - strategy._feeOnTotal(gross, address(processor));
+        vm.startPrank(user);
+        strategy.approve(address(processor), 1000 ether);
+        assertEq(processor.exitToQueuedRail(1000 ether, user, 2), expected);
+        vm.stopPrank();
+        assertGt(strategy.totalAssets(), strategy.totalSupply());
+    }
+
+    function testWithdrawalFeeChargesExtraSharesOnDirectWithdraw() external {
+        strategy.grantRole(strategy.FEE_MANAGER_ROLE(), address(this));
+        strategy.setBaseWithdrawalFee(10_000);
+        _deposit(user, 2000 ether);
+        processor.rebalanceStaking(2);
+        _queueThroughStrategy();
+        vm.prank(user);
+        assertEq(strategy.withdrawAsset(address(qRail), 1000 ether, user, user), 1000.1 ether);
+        assertEq(qRail.balanceOf(user), 1000 ether);
+        assertEq(strategy.totalAssets(), 1000 ether);
+        assertEq(strategy.totalSupply(), 999.9 ether);
+    }
+
     function testProviderUsesLiveQueuedRailRate() external {
         RailProvider provider = RailProvider(strategy.provider());
         assertEq(provider.getRate(address(rail)), 1 ether);

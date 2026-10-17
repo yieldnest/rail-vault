@@ -145,6 +145,7 @@ contract RailStrategyDeployer {
     }
 
     function _wire(Config memory settings, Deployed memory result) private {
+        result.strategy.grantRole(result.strategy.FEE_MANAGER_ROLE(), settings.admin);
         result.manager.grantRole(result.manager.PAUSER_ROLE(), settings.admin);
         result.manager.grantRole(result.manager.CREATOR_ROLE(), address(result.strategy));
         result.manager.grantRole(result.manager.QUEUER_ROLE(), address(result.strategy));

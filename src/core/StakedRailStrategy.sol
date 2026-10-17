@@ -3,15 +3,17 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BaseStrategy} from "@yieldnest-vault/strategy/BaseStrategy.sol";
+import {LinearWithdrawalFee} from "@yieldnest-vault/module/LinearWithdrawalFee.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {QueuedRailStrategy} from "./QueuedRailStrategy.sol";
 import {RailStakePositionManager} from "./RailStakePositionManager.sol";
 
-contract StakedRailStrategy is BaseStrategy {
+contract StakedRailStrategy is BaseStrategy, LinearWithdrawalFee {
     using SafeERC20 for IERC20;
 
     string public constant ST_RAIL_VERSION = "0.1.0";
+    bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER_ROLE");
 
     RailStakePositionManager public positionManager;
     QueuedRailStrategy public queuedRail;
@@ -53,11 +55,18 @@ contract StakedRailStrategy is BaseStrategy {
         emit PositionManagerSet(address(positionManagerAddress));
     }
 
-    function _feeOnRaw(uint256, address) public pure override returns (uint256) {
-        return 0;
+    //// FEES ////
+
+    function _feeOnRaw(uint256 amount, address user) public view override returns (uint256) {
+        return __feeOnRaw(amount, user);
     }
 
-    function _feeOnTotal(uint256, address) public pure override returns (uint256) {
-        return 0;
+    function _feeOnTotal(uint256 amount, address user) public view override returns (uint256) {
+        return __feeOnTotal(amount, user);
+    }
+
+    /// @notice Fee scale is 1e8 = 100%; 10_000 = 1 basis point.
+    function setBaseWithdrawalFee(uint64 fee) external onlyRole(FEE_MANAGER_ROLE) {
+        _setBaseWithdrawalFee(fee);
     }
 }
