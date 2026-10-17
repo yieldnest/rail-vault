@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import {Test} from "forge-std/Test.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
@@ -55,6 +57,34 @@ contract RailUpgradeabilityTest is Test {
         splits = new MockSplitsSwapper(governance, address(rail));
         deployer = new RailStrategyDeployer(_config());
         d = deployer.deploy();
+    }
+
+    function testDeploymentRequiresExtraRoleGrantBeforeVaultPause() external {
+        bytes32 pauser = d.strategy.PAUSER_ROLE();
+        assertFalse(d.strategy.hasRole(pauser, governance));
+        assertFalse(d.qRail.hasRole(pauser, governance));
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", governance, pauser)
+        );
+        vm.prank(governance);
+        d.strategy.pause();
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", governance, pauser)
+        );
+        vm.prank(governance);
+        d.qRail.pause();
+    }
+
+    function testDeploymentAcceptsRewardReceiverOutsideStrategy() external {
+        assertEq(d.rewardsProcessor.railReceiver(), governance);
+        rail.mint(address(d.manager), 10 ether);
+        IERC20[] memory tokens = new IERC20[](1);
+        tokens[0] = IERC20(address(rail));
+        vm.prank(alice);
+        d.rewardsProcessor.collectTokens(tokens);
+        assertEq(rail.balanceOf(governance), 10 ether);
+        assertEq(rail.balanceOf(address(d.strategy)), 0);
+        assertEq(d.strategy.totalAssets(), 0);
     }
 
     function _config() internal view returns (RailStrategyDeployer.Config memory) {

@@ -1036,6 +1036,37 @@ contract StakedRailStrategyTest is Test {
         assertEq(resolver.nextRequestToResolve(), requestId + 1);
     }
 
+    function testIdleRailBelowChunkCannotExitWithoutConfigurationChange() external {
+        _deposit(user, 1500 ether);
+        assertEq(processor.rebalanceStaking(2), 1);
+        assertEq(rail.balanceOf(address(strategy)), 500 ether);
+
+        vm.prank(user);
+        strategy.approve(address(processor), 1500 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(StakedRailProcessor.InsufficientQueuedRail.selector, 1500 ether, 1000 ether)
+        );
+        vm.prank(user);
+        processor.exitToQueuedRail(1500 ether, user, 2);
+
+        vm.prank(user);
+        assertEq(processor.exitToQueuedRail(1000 ether, user, 1), 1000 ether);
+        assertEq(manager.activePositionCount(), 0);
+        assertEq(strategy.balanceOf(user), 500 ether);
+        assertEq(strategy.totalAssets(), 500 ether);
+        assertEq(processor.rebalanceStaking(1), 0);
+
+        vm.expectRevert(abi.encodeWithSelector(StakedRailProcessor.InsufficientQueuedRail.selector, 500 ether, 0));
+        vm.prank(user);
+        processor.exitToQueuedRail(500 ether, user, 1);
+
+        // A configuration change restores progress, but users cannot perform it themselves.
+        processor.setStakeChunkSize(500 ether);
+        assertEq(processor.rebalanceStaking(1), 1);
+        vm.prank(user);
+        assertEq(processor.exitToQueuedRail(500 ether, user, 1), 500 ether);
+    }
+
     function _setProcessorRules() internal {
         IVault.FunctionRule memory rule = _emptyRule();
         rule.paramRules = new IVault.ParamRule[](2);
