@@ -1002,6 +1002,40 @@ contract StakedRailStrategyTest is Test {
         assertEq(resolver.nextRequestToResolve(), requestId + 1);
     }
 
+    function testFuzzResolverFullSettlementAfterDonationLeavesNoRoundingDust(uint256 donation) external {
+        donation = bound(donation, 1, 1_000_000 ether);
+        uint256 shares = 1000 ether;
+        _deposit(user, shares);
+        processor.rebalanceStaking(1);
+
+        vm.startPrank(user);
+        strategy.approve(address(processor), shares);
+        processor.exitToQueuedRail(shares, user, 1);
+        qRail.approve(address(requests), shares);
+        uint256 requestId = requests.requestWithdrawal(shares, user, "");
+        vm.stopPrank();
+
+        uint256[] memory stakeIds = new uint256[](1);
+        stakeIds[0] = 0;
+        vm.warp(block.timestamp + 30 days + 1);
+        queuedRailProcessor.claimMaturedPositions(stakeIds);
+
+        // Unlike the loss case above, donations keep the effective rate >= 1.
+        // Rounding assets down and shares back up must recover every locked share.
+        rail.mint(address(qRail), donation);
+        assertGt(qRail.totalAssets(), qRail.totalSupply());
+        uint256 assets = qRail.previewRedeem(shares);
+        assertGe(assets, shares);
+        assertEq(qRail.previewWithdraw(assets), shares);
+
+        assertEq(resolver.resolveRequests(1), 1);
+        assertEq(requests.requests(requestId).amountLocked, 0);
+        assertEq(qRail.balanceOf(address(requests)), 0);
+        assertEq(qRail.totalSupply(), 0);
+        assertEq(rail.balanceOf(requests.requests(requestId).bag), assets);
+        assertEq(resolver.nextRequestToResolve(), requestId + 1);
+    }
+
     function _setProcessorRules() internal {
         IVault.FunctionRule memory rule = _emptyRule();
         rule.paramRules = new IVault.ParamRule[](2);
