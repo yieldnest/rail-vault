@@ -28,19 +28,11 @@ library QueuedRailDeploymentLib {
 }
 
 library QueuedRailSetupLib {
-    function configure(QueuedRailStrategy qRail, address rail, address unlockedRail, address proxyAdminOwner) external {
+    function configure(QueuedRailStrategy qRail, address rail, address unlockedRail) external {
         qRail.grantRole(qRail.ASSET_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.ALLOCATOR_MANAGER_ROLE(), address(this));
         qRail.grantRole(qRail.PROVIDER_MANAGER_ROLE(), address(this));
-        qRail.setProvider(
-            address(
-                new TransparentUpgradeableProxy(
-                    address(new RailProvider()),
-                    proxyAdminOwner,
-                    abi.encodeCall(RailProvider.initialize, (rail, address(0), unlockedRail, address(0)))
-                )
-            )
-        );
+        qRail.setProvider(address(new RailProvider(rail, address(0), unlockedRail, address(0))));
         qRail.addAsset(rail, false);
         qRail.addAsset(unlockedRail, true);
         qRail.setAssetWithdrawable(rail, true);
@@ -58,20 +50,12 @@ library StakedRailDeploymentLib {
 }
 
 library StakedRailSetupLib {
-    function configure(StakedRailStrategy strategy, address rail, address proxyAdminOwner) external {
+    function configure(StakedRailStrategy strategy, address rail) external {
         address qRail = address(strategy.queuedRail());
         address activeRail = address(strategy.positionManager().activeRail());
         strategy.grantRole(strategy.ASSET_MANAGER_ROLE(), address(this));
         strategy.grantRole(strategy.PROVIDER_MANAGER_ROLE(), address(this));
-        strategy.setProvider(
-            address(
-                new TransparentUpgradeableProxy(
-                    address(new RailProvider()),
-                    proxyAdminOwner,
-                    abi.encodeCall(RailProvider.initialize, (rail, activeRail, address(0), qRail))
-                )
-            )
-        );
+        strategy.setProvider(address(new RailProvider(rail, activeRail, address(0), qRail)));
         strategy.addAsset(rail, true);
         strategy.addAsset(qRail, false);
         strategy.addAsset(activeRail, false);

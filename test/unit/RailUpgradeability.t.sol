@@ -93,18 +93,16 @@ contract RailUpgradeabilityTest is Test {
     }
 
     function _proxies(RailStrategyDeployer.Deployed memory s) internal view returns (address[] memory p) {
-        p = new address[](11);
+        p = new address[](9);
         p[0] = address(s.manager);
         p[1] = address(s.manager.activeRail());
         p[2] = address(s.manager.unlockedRail());
         p[3] = address(s.strategy);
         p[4] = address(s.qRail);
-        p[5] = s.strategy.provider();
-        p[6] = s.qRail.provider();
-        p[7] = address(s.bagFactory);
-        p[8] = address(s.withdrawalRequest);
-        p[9] = address(s.withdrawer);
-        p[10] = address(s.resolver);
+        p[5] = address(s.bagFactory);
+        p[6] = address(s.withdrawalRequest);
+        p[7] = address(s.withdrawer);
+        p[8] = address(s.resolver);
     }
 
     function _implementation(address proxy) internal view returns (address) {
@@ -129,6 +127,21 @@ contract RailUpgradeabilityTest is Test {
             assertEq(_admin(proxies[i]).owner(), governance);
         }
         assertEq(_implementation(address(d.processor)), address(0));
+        assertEq(_implementation(d.strategy.provider()), address(0));
+        assertEq(_implementation(d.qRail.provider()), address(0));
+        assertEq(address(_admin(d.strategy.provider())), address(0));
+        assertEq(address(_admin(d.qRail.provider())), address(0));
+        RailProvider provider = RailProvider(d.strategy.provider());
+        assertEq(provider.rail(), address(rail));
+        assertEq(provider.activeRail(), address(d.manager.activeRail()));
+        assertEq(provider.queuedRail(), address(d.qRail));
+        assertEq(provider.unlockedRail(), address(0));
+        assertEq(provider.rate(), 1 ether);
+        RailProvider queuedProvider = RailProvider(d.qRail.provider());
+        assertEq(queuedProvider.rail(), address(rail));
+        assertEq(queuedProvider.unlockedRail(), address(d.manager.unlockedRail()));
+        assertEq(queuedProvider.activeRail(), address(0));
+        assertEq(queuedProvider.queuedRail(), address(0));
         assertEq(_implementation(address(d.queuedRailProcessor)), address(0));
         assertEq(_implementation(address(d.rewardsProcessor)), address(0));
         assertEq(_implementation(address(d.withdrawalRequest.requestPolicy())), address(0));
@@ -144,7 +157,7 @@ contract RailUpgradeabilityTest is Test {
 
     function testInitializersLockedOnImplementationsAndProxies() external {
         address[] memory proxies = _proxies(d);
-        bytes[] memory calls = new bytes[](11);
+        bytes[] memory calls = new bytes[](9);
         calls[0] = abi.encodeCall(RailStakePositionManager.initialize, (governance, rail, staking, governance));
         calls[1] = abi.encodeCall(RailReceiptToken.initialize, ("Active RAIL", "aRAIL", 18, address(d.manager)));
         calls[2] = abi.encodeCall(RailReceiptToken.initialize, ("Unlocked RAIL", "uRAIL", 18, address(d.manager)));
@@ -156,15 +169,9 @@ contract RailUpgradeabilityTest is Test {
             QueuedRailStrategy.initialize, (governance, "Queued RAIL", "qRAIL", 18, false, false, true, 0)
         );
         calls[5] = abi.encodeCall(
-            RailProvider.initialize, (address(rail), address(d.manager.activeRail()), address(0), address(d.qRail))
-        );
-        calls[6] = abi.encodeCall(
-            RailProvider.initialize, (address(rail), address(0), address(d.manager.unlockedRail()), address(0))
-        );
-        calls[7] = abi.encodeCall(
             BeaconProxyFactory.initialize, (d.bagFactory.implementation(), governance, governance, governance)
         );
-        calls[8] = abi.encodeCall(
+        calls[6] = abi.encodeCall(
             WithdrawalRequest.initialize,
             (
                 address(d.qRail),
@@ -178,9 +185,8 @@ contract RailUpgradeabilityTest is Test {
                 1024
             )
         );
-        calls[9] = abi.encodeCall(BaseWithdrawer.initialize, (address(d.qRail), address(d.withdrawalRequest)));
-        calls[10] =
-            abi.encodeCall(SingleAssetFIFOResolver.initialize, (IERC4626(address(d.qRail)), d.withdrawalRequest));
+        calls[7] = abi.encodeCall(BaseWithdrawer.initialize, (address(d.qRail), address(d.withdrawalRequest)));
+        calls[8] = abi.encodeCall(SingleAssetFIFOResolver.initialize, (IERC4626(address(d.qRail)), d.withdrawalRequest));
         for (uint256 i; i < proxies.length; ++i) {
             _assertLocked(proxies[i], calls[i]);
             _assertLocked(_implementation(proxies[i]), calls[i]);

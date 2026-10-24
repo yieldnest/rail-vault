@@ -64,7 +64,7 @@ contract StakedRailStrategyTest is Test {
                 ))
         );
 
-        QueuedRailSetupLib.configure(qRail, address(rail), address(manager.unlockedRail()), address(this));
+        QueuedRailSetupLib.configure(qRail, address(rail), address(manager.unlockedRail()));
         strategy = StakedRailStrategy(
             payable(address(
                     new TransparentUpgradeableProxy(
@@ -89,7 +89,7 @@ contract StakedRailStrategyTest is Test {
                 ))
         );
 
-        StakedRailSetupLib.configure(strategy, address(rail), address(this));
+        StakedRailSetupLib.configure(strategy, address(rail));
         Bag bagImplementation = new Bag();
         BeaconProxyFactory bagFactoryImplementation = new BeaconProxyFactory();
         bagFactory = BeaconProxyFactory(

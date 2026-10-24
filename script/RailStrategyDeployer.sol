@@ -102,9 +102,7 @@ contract RailStrategyDeployer {
                     )
                 ))
         );
-        QueuedRailSetupLib.configure(
-            result.qRail, settings.rail, address(result.manager.unlockedRail()), settings.admin
-        );
+        QueuedRailSetupLib.configure(result.qRail, settings.rail, address(result.manager.unlockedRail()));
         result.strategy = StakedRailStrategy(
             payable(address(
                     new TransparentUpgradeableProxy(
@@ -128,7 +126,7 @@ contract RailStrategyDeployer {
                     )
                 ))
         );
-        StakedRailSetupLib.configure(result.strategy, settings.rail, settings.admin);
+        StakedRailSetupLib.configure(result.strategy, settings.rail);
         result.bagFactory = WithdrawalSupportDeploymentLib.deployBagFactory(settings.admin);
         result.withdrawalRequest =
             WithdrawalRequestDeploymentLib.deploy(settings.admin, address(result.qRail), address(result.bagFactory));

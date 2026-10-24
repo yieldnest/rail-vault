@@ -4,27 +4,22 @@ pragma solidity ^0.8.24;
 import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IProvider} from "@yieldnest-vault/interface/IProvider.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract RailProvider is IProvider, Initializable {
+contract RailProvider is IProvider {
     error UnsupportedAsset(address asset);
 
-    address public rail;
-    address public queuedRail;
-    address public activeRail;
-    address public unlockedRail;
-    uint256 public rate;
+    address public immutable rail;
+    address public immutable queuedRail;
+    address public immutable activeRail;
+    address public immutable unlockedRail;
+    uint256 public immutable rate;
 
-    constructor() {
-        _disableInitializers();
-    }
-
-    function initialize(
+    constructor(
         address railAddress,
         address activeRailAddress,
         address unlockedRailAddress,
         address queuedRailAddress
-    ) external initializer {
+    ) {
         rail = railAddress;
         queuedRail = queuedRailAddress;
         activeRail = activeRailAddress;

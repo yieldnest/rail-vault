@@ -50,7 +50,7 @@ contract RailRewardsSplitsIntegrationTest is Test {
                     )
                 ))
         );
-        QueuedRailSetupLib.configure(qRail, SplitsMainnet.RAIL, address(manager.unlockedRail()), address(this));
+        QueuedRailSetupLib.configure(qRail, SplitsMainnet.RAIL, address(manager.unlockedRail()));
         stRail = StakedRailStrategy(
             payable(address(
                     new TransparentUpgradeableProxy(
@@ -63,7 +63,7 @@ contract RailRewardsSplitsIntegrationTest is Test {
                     )
                 ))
         );
-        StakedRailSetupLib.configure(stRail, SplitsMainnet.RAIL, address(this));
+        StakedRailSetupLib.configure(stRail, SplitsMainnet.RAIL);
         beneficiary = address(stRail);
         (swapper, oracle) = SplitsMainnet.create(beneficiary);
         processor = new RailRewardsProcessor(manager, swapper);
