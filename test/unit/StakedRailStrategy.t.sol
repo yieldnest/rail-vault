@@ -1002,6 +1002,51 @@ contract StakedRailStrategyTest is Test {
         assertEq(resolver.nextRequestToResolve(), requestId + 1);
     }
 
+    function testFuzzQueuedRailWithdrawalDeltaMatchesActualBurn(uint256 backing, uint256 shares) public {
+        backing = bound(backing, 0, 2000 ether);
+        shares = bound(shares, 1, 1000 ether);
+        _deposit(user, 1000 ether);
+        processor.rebalanceStaking(1);
+        vm.startPrank(user);
+        strategy.approve(address(processor), 1000 ether);
+        processor.exitToQueuedRail(1000 ether, user, 1);
+        vm.stopPrank();
+
+        uint256[] memory stakeIds = new uint256[](1);
+        stakeIds[0] = 0;
+        vm.warp(block.timestamp + 30 days + 1);
+        queuedRailProcessor.claimMaturedPositions(stakeIds);
+
+        // Vary liquid backing to cover losses, par and gains, including zero-value withdrawals.
+        deal(address(rail), address(qRail), backing);
+        qRail.grantRole(qRail.ALLOCATOR_ROLE(), user);
+        uint256 assets = qRail.previewRedeem(shares);
+        uint256 expectedBurn = qRail.previewWithdraw(assets);
+        assertLe(expectedBurn, shares);
+        uint256 expectedDelta = shares - expectedBurn;
+        uint256 balanceBefore = qRail.balanceOf(user);
+        uint256 supplyBefore = qRail.totalSupply();
+        uint256 railBefore = rail.balanceOf(user);
+
+        // Bypass the resolver's completeness guard to observe the actual qRAIL state change.
+        vm.prank(user);
+        uint256 burned = qRail.withdrawAsset(address(rail), assets, user, user);
+        uint256 actualBurn = balanceBefore - qRail.balanceOf(user);
+        assertEq(burned, expectedBurn);
+        assertEq(actualBurn, expectedBurn);
+        assertEq(supplyBefore - qRail.totalSupply(), actualBurn);
+        assertEq(shares - actualBurn, expectedDelta);
+        assertEq(qRail.balanceOf(user), balanceBefore - shares + expectedDelta);
+        assertEq(rail.balanceOf(user) - railBefore, assets);
+        assertEq(rail.balanceOf(address(qRail)), backing - assets);
+        if (backing >= supplyBefore) assertEq(expectedDelta, 0);
+    }
+
+    function testQueuedRailWithdrawalDeltaCanExceedOneShareWei() external {
+        testFuzzQueuedRailWithdrawalDeltaMatchesActualBurn(1 ether, 1000 ether);
+        assertEq(qRail.balanceOf(user), 998);
+    }
+
     function testFuzzResolverFullSettlementAfterDonationLeavesNoRoundingDust(uint256 donation) external {
         donation = bound(donation, 1, 1_000_000 ether);
         uint256 shares = 1000 ether;
