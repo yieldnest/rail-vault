@@ -7,8 +7,8 @@ import {WithdrawalRequest} from "@yieldnest-vault-withdrawals/WithdrawalRequest.
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-/// @notice Permissionless FIFO settlement into the vault's base asset.
-/// @dev Requires a withdrawer with matching conversion rules and liquidity held directly in the vault.
+/// @notice Permissionless FIFO settlement into the base asset, with residual shares sent to the Bag.
+/// @dev Requires matching conversion rules, direct base-asset liquidity and vault-token transfers in the withdrawer.
 contract SingleAssetFIFOResolver is Initializable {
     IERC4626 public vault;
     WithdrawalRequest public withdrawalRequest;
@@ -54,13 +54,18 @@ contract SingleAssetFIFOResolver is Initializable {
             uint256 fullAmount = vault.previewRedeem(shares);
             uint256 available = IERC20(asset).balanceOf(address(vault));
             uint256 assetAmount = available < fullAmount ? available : fullAmount;
-            if (assetAmount == 0) break;
+            if (assetAmount == 0 && fullAmount != 0) break;
 
-            uint256 burned = withdrawalRequest.resolveWithdrawalRequest(requestId, asset, assetAmount);
+            uint256 burned;
+            if (assetAmount != 0) {
+                burned = withdrawalRequest.resolveWithdrawalRequest(requestId, asset, assetAmount);
+            }
             uint256 remaining = shares - burned;
-            // A full settlement must consume the exact locked shares, never skip rounding dust.
-            // TODO: Handle rounding residuals, including zero-value shares, without blocking the FIFO queue.
-            if (assetAmount == fullAmount && remaining != 0) revert IncompleteRedemption(requestId, remaining);
+            // Only full settlements may release residual shares; partial fills must remain in FIFO order.
+            if (assetAmount == fullAmount && remaining != 0) {
+                remaining -= withdrawalRequest.resolveWithdrawalRequest(requestId, address(vault), remaining);
+                if (remaining != 0) revert IncompleteRedemption(requestId, remaining);
+            }
             emit RequestResolved(requestId, assetAmount);
             if (remaining != 0) break;
             nextRequestToResolve++;

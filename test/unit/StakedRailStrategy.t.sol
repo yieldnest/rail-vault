@@ -995,11 +995,70 @@ contract StakedRailStrategyTest is Test {
         assertEq(qRail.previewRedeem(1000 ether), 400 ether);
         assertEq(qRail.previewWithdraw(400 ether), 1000 ether - 1);
 
-        // Expected behavior: settle the available RAIL and advance the FIFO cursor despite dust.
-        // Current behavior: SingleAssetFIFOResolver reverts IncompleteRedemption(requestId, 1).
+        // Settle the RAIL and transfer the unburned share to the Bag without blocking FIFO.
         assertEq(resolver.resolveRequests(1), 1);
         assertEq(requests.requests(requestId).amountLocked, 0);
+        assertEq(rail.balanceOf(requests.requests(requestId).bag), 400 ether);
+        assertEq(qRail.balanceOf(requests.requests(requestId).bag), 1);
+        assertEq(qRail.balanceOf(address(requests)), 0);
         assertEq(resolver.nextRequestToResolve(), requestId + 1);
+
+        address[] memory assets = new address[](2);
+        assets[0] = address(rail);
+        assets[1] = address(qRail);
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 400 ether;
+        amounts[1] = 1;
+        vm.startPrank(user);
+        IBag(requests.requests(requestId).bag).claim(assets, payable(user), amounts);
+        requests.burn(requestId);
+        vm.stopPrank();
+        assertEq(rail.balanceOf(user), 400 ether);
+        assertEq(qRail.balanceOf(user), 1);
+        assertFalse(requests.requestExists(requestId));
+    }
+
+    function testFuzzResolverTransfersResidualSharesAndContinuesFifo(uint256 backing) public {
+        backing = bound(backing, 0, 2000 ether);
+        _deposit(user, 1000 ether);
+        processor.rebalanceStaking(1);
+        vm.startPrank(user);
+        strategy.approve(address(processor), 1000 ether);
+        processor.exitToQueuedRail(1000 ether, user, 1);
+        qRail.approve(address(requests), 1000 ether);
+        uint256 first = requests.requestWithdrawal(500 ether, user, "");
+        uint256 second = requests.requestWithdrawal(500 ether, user, "");
+        vm.stopPrank();
+
+        // No liquid RAIL is not the same as a zero-value request: neither request may advance.
+        assertEq(resolver.resolveRequests(2), 0);
+        assertEq(resolver.nextRequestToResolve(), first);
+        assertEq(requests.requests(first).amountLocked, 500 ether);
+        assertEq(qRail.balanceOf(requests.requests(first).bag), 0);
+
+        vm.warp(block.timestamp + 30 days + 1);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 0;
+        queuedRailProcessor.claimMaturedPositions(ids);
+        deal(address(rail), address(qRail), backing);
+
+        for (uint256 id = first; id <= second; ++id) {
+            uint256 assets = qRail.previewRedeem(500 ether);
+            uint256 burn = qRail.previewWithdraw(assets);
+            uint256 supplyBefore = qRail.totalSupply();
+            assertEq(resolver.resolveRequests(1), 1);
+            address bag = requests.requests(id).bag;
+            assertEq(requests.requests(id).amountLocked, 0);
+            assertEq(rail.balanceOf(bag), assets);
+            assertEq(qRail.balanceOf(bag), 500 ether - burn);
+            assertEq(qRail.totalSupply(), supplyBefore - burn);
+            assertEq(resolver.nextRequestToResolve(), id + 1);
+        }
+        assertEq(qRail.balanceOf(address(requests)), 0);
+    }
+
+    function testResolverTransfersZeroValueSharesAndContinuesFifo() external {
+        testFuzzResolverTransfersResidualSharesAndContinuesFifo(0);
     }
 
     function testFuzzQueuedRailWithdrawalDeltaMatchesActualBurn(uint256 backing, uint256 shares) public {
