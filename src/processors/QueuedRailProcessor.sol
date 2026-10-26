@@ -1,24 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-
 import {QueuedRailStrategy} from "../core/QueuedRailStrategy.sol";
 import {RailStakePositionManager} from "../core/RailStakePositionManager.sol";
 
-contract QueuedRailProcessor is AccessControl {
-    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
-
+contract QueuedRailProcessor {
     QueuedRailStrategy public immutable qRail;
     RailStakePositionManager public immutable positionManager;
 
-    constructor(address admin, QueuedRailStrategy qRailAddress, RailStakePositionManager positionManagerAddress) {
+    constructor(QueuedRailStrategy qRailAddress, RailStakePositionManager positionManagerAddress) {
         qRail = qRailAddress;
         positionManager = positionManagerAddress;
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
-    function claimMaturedPositions(uint256[] calldata stakeIds) external onlyRole(KEEPER_ROLE) returns (uint256) {
+    /// @notice Anyone may claim matured positions; all proceeds go to qRail.
+    function claimMaturedPositions(uint256[] calldata stakeIds) external returns (uint256) {
         address[] memory targets = new address[](1);
         uint256[] memory values = new uint256[](1);
         bytes[] memory data = new bytes[](1);

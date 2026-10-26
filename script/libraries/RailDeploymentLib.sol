@@ -168,7 +168,7 @@ library RailProcessorsDeploymentLib {
         external
         returns (QueuedRailProcessor)
     {
-        return new QueuedRailProcessor(address(this), qRail, manager);
+        return new QueuedRailProcessor(qRail, manager);
     }
 
     function deployRewardsProcessor(RailStakePositionManager manager, address splitsSwapper)

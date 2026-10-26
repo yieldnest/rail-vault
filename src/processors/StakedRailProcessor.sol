@@ -30,6 +30,9 @@ contract StakedRailProcessor is AccessControl {
     //// STAKING ////
 
     function rebalanceStaking(uint256 maxOperations) external returns (uint256 operations) {
+        // Permissionless and unpaced: repeated calls can stake all idle RAIL in full chunks.
+        // maxOperations only bounds this call; it does not preserve a liquid buffer.
+        // If a buffer is required, enforce a governance-configured idle floor here.
         IERC20 rail = IERC20(stRail.asset());
         uint256 amount = stakeChunkSize;
         while (operations < maxOperations) {

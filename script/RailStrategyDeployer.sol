@@ -151,7 +151,6 @@ contract RailStrategyDeployer {
         result.manager.grantRole(result.manager.TOKEN_WITHDRAWER_ROLE(), address(result.rewardsProcessor));
         result.strategy.grantRole(result.strategy.PROCESSOR_ROLE(), address(result.processor));
         result.qRail.grantRole(result.qRail.PROCESSOR_ROLE(), address(result.queuedRailProcessor));
-        result.queuedRailProcessor.grantRole(result.queuedRailProcessor.KEEPER_ROLE(), settings.admin);
         result.strategy.grantRole(result.strategy.PROCESSOR_MANAGER_ROLE(), address(this));
         result.qRail.grantRole(result.qRail.PROCESSOR_MANAGER_ROLE(), address(this));
         _setProcessorRules(settings, result);
@@ -182,7 +181,6 @@ contract RailStrategyDeployer {
         _handover(IAccessControl(address(result.qRail)), settings.admin);
         _handover(IAccessControl(address(result.bagFactory)), settings.admin);
         _handover(IAccessControl(address(result.withdrawalRequest)), settings.admin);
-        _handover(IAccessControl(address(result.queuedRailProcessor)), settings.admin);
     }
 
     function _handover(IAccessControl target, address admin) private {

@@ -104,6 +104,7 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         stakeIds[0] = 0;
         stakeIds[1] = 1;
         vm.warp(block.timestamp + 30 days + 1);
+        vm.prank(bob);
         assertEq(queuedRailProcessor.claimMaturedPositions(stakeIds), 2000 ether);
         assertEq(rail.balanceOf(address(qRail)), 2000 ether);
 
@@ -150,7 +151,6 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertTrue(requests.hasRole(requests.CONFIGURATION_MANAGER_ROLE(), address(this)));
         assertTrue(bagFactory.hasRole(bagFactory.CREATOR_ROLE(), address(requests)));
         assertTrue(bagFactory.hasRole(bagFactory.IMPLEMENTATION_MANAGER_ROLE(), address(this)));
-        assertTrue(queuedRailProcessor.hasRole(queuedRailProcessor.KEEPER_ROLE(), address(this)));
 
         assertFalse(strategy.hasRole(strategy.PROCESSOR_MANAGER_ROLE(), bootstrap));
         assertFalse(strategy.hasRole(strategy.ASSET_MANAGER_ROLE(), bootstrap));
@@ -180,14 +180,13 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertFalse(bagFactory.hasRole(bagFactory.CREATOR_ROLE(), bootstrap));
         assertFalse(requests.hasRole(requests.RESOLVER_ROLE(), address(this)));
 
-        address[7] memory components = [
+        address[6] memory components = [
             address(manager),
             address(strategy),
             address(qRail),
             address(bagFactory),
             address(requests),
-            address(processor),
-            address(queuedRailProcessor)
+            address(processor)
         ];
         for (uint256 i; i < components.length; i++) {
             assertTrue(IAccessControl(components[i]).hasRole(bytes32(0), address(this)));

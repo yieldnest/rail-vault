@@ -152,8 +152,7 @@ contract StakedRailStrategyTest is Test {
         );
         processor = new StakedRailProcessor(address(this), strategy, 1000 ether);
 
-        queuedRailProcessor = new QueuedRailProcessor(address(this), qRail, manager);
-        queuedRailProcessor.grantRole(queuedRailProcessor.KEEPER_ROLE(), address(this));
+        queuedRailProcessor = new QueuedRailProcessor(qRail, manager);
 
         manager.grantRole(manager.CREATOR_ROLE(), address(strategy));
         strategy.grantRole(strategy.PROCESSOR_ROLE(), address(processor));
@@ -729,15 +728,10 @@ contract StakedRailStrategyTest is Test {
         requests.resolveWithdrawalRequest(0, address(rail), 1);
     }
 
-    function testQueuedProcessorRequiresKeeperAndVaultProcessorRoles() external {
+    function testQueuedProcessorPermissionlessButRequiresVaultProcessorRole() external {
         uint256[] memory ids = new uint256[](0);
-        vm.expectRevert(
-            abi.encodeWithSignature(
-                "AccessControlUnauthorizedAccount(address,bytes32)", user, queuedRailProcessor.KEEPER_ROLE()
-            )
-        );
         vm.prank(user);
-        queuedRailProcessor.claimMaturedPositions(ids);
+        assertEq(queuedRailProcessor.claimMaturedPositions(ids), 0);
         bytes32 role = qRail.PROCESSOR_ROLE();
         qRail.revokeRole(role, address(queuedRailProcessor));
         vm.expectRevert(
@@ -745,6 +739,51 @@ contract StakedRailStrategyTest is Test {
                 "AccessControlUnauthorizedAccount(address,bytes32)", address(queuedRailProcessor), role
             )
         );
+        queuedRailProcessor.claimMaturedPositions(ids);
+    }
+
+    function testAnyoneCanClaimMaturedPositionsOnlyIntoQueuedRail() external {
+        _deposit(user, 1000 ether);
+        processor.rebalanceStaking(1);
+        _queueThroughStrategy();
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 0;
+        address caller = makeAddr("permissionlessClaimer");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVault.ProcessFailed.selector,
+                abi.encodeCall(RailStakePositionManager.claimMaturedPositions, (ids, address(qRail))),
+                abi.encodeWithSelector(RailStakePositionManager.PositionNotMatured.selector)
+            )
+        );
+        vm.prank(caller);
+        queuedRailProcessor.claimMaturedPositions(ids);
+        vm.warp(block.timestamp + 30 days + 1);
+        uint256[] memory duplicateIds = new uint256[](2);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVault.ProcessFailed.selector,
+                abi.encodeCall(RailStakePositionManager.claimMaturedPositions, (duplicateIds, address(qRail))),
+                abi.encodeWithSelector(RailStakePositionManager.InvalidPositionStatus.selector)
+            )
+        );
+        vm.prank(caller);
+        queuedRailProcessor.claimMaturedPositions(duplicateIds);
+        assertEq(rail.balanceOf(address(qRail)), 0);
+        assertEq(manager.unlockedRail().totalSupply(), 1000 ether);
+        vm.prank(caller);
+        assertEq(queuedRailProcessor.claimMaturedPositions(ids), 1000 ether);
+        assertEq(rail.balanceOf(address(qRail)), 1000 ether);
+        assertEq(rail.balanceOf(caller), 0);
+        assertEq(manager.unlockedRail().totalSupply(), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IVault.ProcessFailed.selector,
+                abi.encodeCall(RailStakePositionManager.claimMaturedPositions, (ids, address(qRail))),
+                abi.encodeWithSelector(RailStakePositionManager.InvalidPositionStatus.selector)
+            )
+        );
+        vm.prank(caller);
         queuedRailProcessor.claimMaturedPositions(ids);
     }
 
