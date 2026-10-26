@@ -33,6 +33,8 @@ import {
 contract RailStrategyDeployer {
     struct Config {
         address admin;
+        address pauser;
+        address unpauser;
         address rail;
         address staking;
         address splitsSwapper;
@@ -58,6 +60,7 @@ contract RailStrategyDeployer {
     bool public deployed;
 
     error InvalidAdmin();
+    error InvalidPauseAuthority();
     error OnlyOperator();
     error AlreadyDeployed();
 
@@ -65,6 +68,7 @@ contract RailStrategyDeployer {
 
     constructor(Config memory config_) {
         if (config_.admin == address(0)) revert InvalidAdmin();
+        if (config_.pauser == address(0) || config_.unpauser == address(0)) revert InvalidPauseAuthority();
         configuration = config_;
         operator = msg.sender;
     }
@@ -128,8 +132,9 @@ contract RailStrategyDeployer {
         );
         StakedRailSetupLib.configure(result.strategy, settings.rail);
         result.bagFactory = WithdrawalSupportDeploymentLib.deployBagFactory(settings.admin);
-        result.withdrawalRequest =
-            WithdrawalRequestDeploymentLib.deploy(settings.admin, address(result.qRail), address(result.bagFactory));
+        result.withdrawalRequest = WithdrawalRequestDeploymentLib.deploy(
+            settings.admin, settings.pauser, address(result.qRail), address(result.bagFactory)
+        );
         result.withdrawer = WithdrawalSupportDeploymentLib.deployWithdrawer(
             settings.admin, address(result.qRail), address(result.withdrawalRequest)
         );
@@ -144,7 +149,13 @@ contract RailStrategyDeployer {
 
     function _wire(Config memory settings, Deployed memory result) private {
         result.strategy.grantRole(result.strategy.FEE_MANAGER_ROLE(), settings.admin);
-        result.manager.grantRole(result.manager.PAUSER_ROLE(), settings.admin);
+        result.strategy.grantRole(result.strategy.PAUSER_ROLE(), settings.pauser);
+        result.qRail.grantRole(result.qRail.PAUSER_ROLE(), settings.pauser);
+        result.qRail.grantRole(result.qRail.UNPAUSER_ROLE(), settings.unpauser);
+        // These components use PAUSER_ROLE for both pause and unpause; either authority can do both.
+        result.manager.grantRole(result.manager.PAUSER_ROLE(), settings.pauser);
+        result.manager.grantRole(result.manager.PAUSER_ROLE(), settings.unpauser);
+        result.withdrawalRequest.grantRole(result.withdrawalRequest.PAUSER_ROLE(), settings.unpauser);
         result.manager.grantRole(result.manager.CREATOR_ROLE(), address(result.strategy));
         result.manager.grantRole(result.manager.QUEUER_ROLE(), address(result.strategy));
         result.manager.grantRole(result.manager.CLAIMER_ROLE(), address(result.qRail));
@@ -174,7 +185,7 @@ contract RailStrategyDeployer {
             result.strategy.unpause();
             result.strategy.revokeRole(result.strategy.UNPAUSER_ROLE(), address(this));
         }
-        result.strategy.grantRole(result.strategy.UNPAUSER_ROLE(), settings.admin);
+        result.strategy.grantRole(result.strategy.UNPAUSER_ROLE(), settings.unpauser);
 
         _handover(IAccessControl(address(result.manager)), settings.admin);
         _handover(IAccessControl(address(result.strategy)), settings.admin);

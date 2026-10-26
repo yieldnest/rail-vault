@@ -14,6 +14,8 @@ contract StakedRailWithdrawalFeeIntegrationTest is Test {
     // YieldNest uses a 1e8 fee scale: 10_000 = 0.01% = 1 basis point.
     uint64 internal constant WITHDRAWAL_FEE = 10_000;
     address internal alice = makeAddr("alice");
+    address internal pauser = makeAddr("pauser");
+    address internal unpauser = makeAddr("unpauser");
     IERC20 internal rail;
     RailStrategyDeployer.Deployed internal d;
 
@@ -22,6 +24,8 @@ contract StakedRailWithdrawalFeeIntegrationTest is Test {
         RailStrategyDeployer deployer = new RailStrategyDeployer(
             RailStrategyDeployer.Config({
                 admin: address(this),
+                pauser: pauser,
+                unpauser: unpauser,
                 rail: address(rail),
                 staking: STAKING,
                 splitsSwapper: address(new MockSplitsSwapper(address(this), address(rail))),

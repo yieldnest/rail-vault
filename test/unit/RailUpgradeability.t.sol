@@ -44,6 +44,8 @@ contract RailUpgradeabilityTest is Test {
     bytes32 constant IMPLEMENTATION_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
     bytes32 constant BEACON_SLOT = bytes32(uint256(keccak256("eip1967.proxy.beacon")) - 1);
     address governance = makeAddr("governance");
+    address pauser = makeAddr("pauser");
+    address unpauser = makeAddr("unpauser");
     address alice = makeAddr("alice");
     MockERC20 rail;
     MockRailgunStaking staking;
@@ -59,20 +61,69 @@ contract RailUpgradeabilityTest is Test {
         d = deployer.deploy();
     }
 
-    function testDeploymentRequiresExtraRoleGrantBeforeVaultPause() external {
-        bytes32 pauser = d.strategy.PAUSER_ROLE();
-        assertFalse(d.strategy.hasRole(pauser, governance));
-        assertFalse(d.qRail.hasRole(pauser, governance));
-        vm.expectRevert(
-            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", governance, pauser)
-        );
-        vm.prank(governance);
+    function testDeploymentGrantsPauseAndUnpause() external {
+        vm.prank(pauser);
         d.strategy.pause();
-        vm.expectRevert(
-            abi.encodeWithSignature("AccessControlUnauthorizedAccount(address,bytes32)", governance, pauser)
-        );
-        vm.prank(governance);
+        vm.prank(pauser);
         d.qRail.pause();
+        assertTrue(d.strategy.paused());
+        assertTrue(d.qRail.paused());
+        vm.prank(unpauser);
+        d.strategy.unpause();
+        vm.prank(unpauser);
+        d.qRail.unpause();
+        assertFalse(d.strategy.paused());
+        assertFalse(d.qRail.paused());
+    }
+
+    function testDistinctPauseAuthorities() external {
+        RailStrategyDeployer.Config memory config = _config();
+        config.pauser = pauser;
+        config.unpauser = unpauser;
+        RailStrategyDeployer other = new RailStrategyDeployer(config);
+        RailStrategyDeployer.Deployed memory s = other.deploy();
+        assertTrue(s.strategy.hasRole(s.strategy.PAUSER_ROLE(), pauser));
+        assertTrue(s.strategy.hasRole(s.strategy.UNPAUSER_ROLE(), unpauser));
+        assertTrue(s.qRail.hasRole(s.qRail.PAUSER_ROLE(), pauser));
+        assertTrue(s.qRail.hasRole(s.qRail.UNPAUSER_ROLE(), unpauser));
+        assertFalse(s.strategy.hasRole(s.strategy.PAUSER_ROLE(), governance));
+        assertFalse(s.strategy.hasRole(s.strategy.UNPAUSER_ROLE(), address(other)));
+        assertFalse(s.qRail.hasRole(s.qRail.UNPAUSER_ROLE(), pauser));
+        assertFalse(s.strategy.hasRole(s.strategy.PAUSER_ROLE(), unpauser));
+        vm.startPrank(pauser);
+        s.strategy.pause();
+        s.qRail.pause();
+        s.manager.pause();
+        s.withdrawalRequest.pause();
+        vm.stopPrank();
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "AccessControlUnauthorizedAccount(address,bytes32)", pauser, s.strategy.UNPAUSER_ROLE()
+            )
+        );
+        vm.prank(pauser);
+        s.strategy.unpause();
+        vm.startPrank(unpauser);
+        s.strategy.unpause();
+        s.qRail.unpause();
+        s.manager.unpause();
+        s.withdrawalRequest.unpause();
+        vm.stopPrank();
+        assertFalse(s.strategy.paused());
+        assertFalse(s.qRail.paused());
+        assertFalse(s.manager.paused());
+        assertFalse(s.withdrawalRequest.paused());
+    }
+
+    function testDeploymentRejectsZeroPauseAuthorities() external {
+        RailStrategyDeployer.Config memory config = _config();
+        config.pauser = address(0);
+        vm.expectRevert(RailStrategyDeployer.InvalidPauseAuthority.selector);
+        new RailStrategyDeployer(config);
+        config.pauser = governance;
+        config.unpauser = address(0);
+        vm.expectRevert(RailStrategyDeployer.InvalidPauseAuthority.selector);
+        new RailStrategyDeployer(config);
     }
 
     function testDeploymentAcceptsRewardReceiverOutsideStrategy() external {
@@ -107,8 +158,9 @@ contract RailUpgradeabilityTest is Test {
     }
 
     function _config() internal view returns (RailStrategyDeployer.Config memory) {
-        return
-            RailStrategyDeployer.Config(governance, address(rail), address(staking), address(splits), 1000 ether, true);
+        return RailStrategyDeployer.Config(
+            governance, pauser, unpauser, address(rail), address(staking), address(splits), 1000 ether, true
+        );
     }
 
     function _proxies(RailStrategyDeployer.Deployed memory s) internal view returns (address[] memory p) {
@@ -319,7 +371,7 @@ contract RailUpgradeabilityTest is Test {
     }
 
     function testManagerUpgradeCanAppendStateWithoutResettingPauseOrRoles() external {
-        vm.prank(governance);
+        vm.prank(pauser);
         d.manager.pause();
         address v2 = address(new RailManagerV2());
         _upgrade(address(d.manager), v2);

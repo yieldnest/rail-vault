@@ -6,9 +6,15 @@ import {console2} from "forge-std/console2.sol";
 import {RailStrategyDeployer} from "./RailStrategyDeployer.sol";
 
 contract DeployStakedRail is Script {
+    // TODO: Replace both placeholders with the intended governance/emergency-control addresses before deployment.
+    address internal constant PAUSER = address(0x01);
+    address internal constant UNPAUSER = address(0x01);
+
     function run() external {
         RailStrategyDeployer.Config memory config = RailStrategyDeployer.Config({
             admin: vm.envOr("ADMIN", msg.sender),
+            pauser: PAUSER,
+            unpauser: UNPAUSER,
             rail: vm.envAddress("RAIL"),
             staking: vm.envAddress("RAIL_STAKING"),
             splitsSwapper: vm.envAddress("SPLITS_SWAPPER"),

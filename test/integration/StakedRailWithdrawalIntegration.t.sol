@@ -28,6 +28,8 @@ contract StakedRailWithdrawalIntegrationTest is Test {
 
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
+    address internal pauser = makeAddr("pauser");
+    address internal unpauser = makeAddr("unpauser");
 
     IERC20 internal rail;
     IRailgunStaking internal staking;
@@ -65,6 +67,8 @@ contract StakedRailWithdrawalIntegrationTest is Test {
     function _config(address admin, bool unpause) internal returns (RailStrategyDeployer.Config memory config) {
         config = RailStrategyDeployer.Config({
             admin: admin,
+            pauser: pauser,
+            unpauser: unpauser,
             rail: address(rail),
             staking: address(staking),
             splitsSwapper: address(new MockSplitsSwapper(admin, address(rail))),
@@ -142,7 +146,14 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertTrue(manager.hasRole(manager.QUEUER_ROLE(), address(strategy)));
         assertTrue(manager.hasRole(manager.CLAIMER_ROLE(), address(qRail)));
         assertTrue(manager.hasRole(manager.TOKEN_WITHDRAWER_ROLE(), address(rewardsProcessor)));
-        assertTrue(manager.hasRole(manager.PAUSER_ROLE(), address(this)));
+        assertTrue(manager.hasRole(manager.PAUSER_ROLE(), pauser));
+        assertTrue(manager.hasRole(manager.PAUSER_ROLE(), unpauser));
+        assertTrue(strategy.hasRole(strategy.PAUSER_ROLE(), pauser));
+        assertTrue(strategy.hasRole(strategy.UNPAUSER_ROLE(), unpauser));
+        assertTrue(qRail.hasRole(qRail.PAUSER_ROLE(), pauser));
+        assertTrue(qRail.hasRole(qRail.UNPAUSER_ROLE(), unpauser));
+        assertTrue(requests.hasRole(requests.PAUSER_ROLE(), pauser));
+        assertTrue(requests.hasRole(requests.PAUSER_ROLE(), unpauser));
         assertTrue(strategy.hasRole(strategy.PROCESSOR_ROLE(), address(processor)));
         assertTrue(qRail.hasRole(qRail.PROCESSOR_ROLE(), address(queuedRailProcessor)));
         assertTrue(qRail.hasRole(qRail.ALLOCATOR_ROLE(), address(strategy)));
@@ -231,8 +242,9 @@ contract StakedRailWithdrawalIntegrationTest is Test {
         assertTrue(result.strategy.hasRole(bytes32(0), bob));
         assertFalse(result.strategy.hasRole(bytes32(0), address(this)));
         assertFalse(result.strategy.hasRole(bytes32(0), address(another)));
-        assertTrue(result.strategy.hasRole(result.strategy.UNPAUSER_ROLE(), bob));
-        vm.prank(bob);
+        assertTrue(result.strategy.hasRole(result.strategy.UNPAUSER_ROLE(), unpauser));
+        assertFalse(result.strategy.hasRole(result.strategy.UNPAUSER_ROLE(), bob));
+        vm.prank(unpauser);
         result.strategy.unpause();
         assertFalse(result.strategy.paused());
     }
