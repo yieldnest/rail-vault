@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Script} from "forge-std/Script.sol";
+import {console2} from "forge-std/console2.sol";
 import {RailStrategyDeployer} from "./RailStrategyDeployer.sol";
 
 contract DeployStakedRail is Script {
@@ -20,6 +21,15 @@ contract DeployStakedRail is Script {
         RailStrategyDeployer.Deployed memory deployed = deployer.deploy();
 
         vm.stopBroadcast();
+
+        // TODO: Bootstrap both vaults with an initial RAIL deposit, staking, qRAIL seeding
+        // and permanently locked seed shares before opening the vaults to public deposits.
+        console2.log("+------------------------------------------------------------------+");
+        console2.log("| ATTENTION: VAULT CAPITAL BOOTSTRAP HAS NOT BEEN PERFORMED          |");
+        console2.log("| Both vaults start empty. Seed stRAIL and qRAIL, and permanently    |");
+        console2.log("| lock seed shares before opening public deposits.                 |");
+        console2.log("| UNPAUSE=true does NOT perform this bootstrap.                     |");
+        console2.log("+------------------------------------------------------------------+");
 
         string memory json = "staked-rail";
         vm.serializeAddress(json, "deployer", address(deployer));
