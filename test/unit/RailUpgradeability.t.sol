@@ -87,6 +87,25 @@ contract RailUpgradeabilityTest is Test {
         assertEq(d.strategy.totalAssets(), 0);
     }
 
+    function _resolverStorageSlot() internal pure returns (bytes32) {
+        return
+            keccak256(abi.encode(uint256(keccak256("rail.storage.SingleAssetFIFOResolver")) - 1))
+                & ~bytes32(uint256(0xff));
+    }
+
+    function testResolverUsesERC7201Storage() external view {
+        bytes32 slot = _resolverStorageSlot();
+        address resolver = address(d.resolver);
+        assertEq(address(d.resolver.vault()), address(d.qRail));
+        assertEq(address(d.resolver.withdrawalRequest()), address(d.withdrawalRequest));
+        assertEq(vm.load(resolver, slot), bytes32(uint256(uint160(address(d.qRail)))));
+        assertEq(vm.load(resolver, bytes32(uint256(slot) + 1)), bytes32(uint256(uint160(address(d.withdrawalRequest)))));
+        assertEq(vm.load(resolver, bytes32(uint256(slot) + 2)), bytes32(0));
+        assertEq(vm.load(resolver, bytes32(0)), bytes32(0));
+        assertEq(vm.load(resolver, bytes32(uint256(1))), bytes32(0));
+        assertEq(vm.load(resolver, bytes32(uint256(2))), bytes32(0));
+    }
+
     function _config() internal view returns (RailStrategyDeployer.Config memory) {
         return
             RailStrategyDeployer.Config(governance, address(rail), address(staking), address(splits), 1000 ether, true);
@@ -266,6 +285,9 @@ contract RailUpgradeabilityTest is Test {
         // A second resolver upgrade must preserve the already-advanced FIFO cursor.
         _upgrade(address(d.resolver), address(new SingleAssetFIFOResolver()));
         assertEq(d.resolver.nextRequestToResolve(), 1);
+        assertEq(address(d.resolver.vault()), address(d.qRail));
+        assertEq(address(d.resolver.withdrawalRequest()), address(d.withdrawalRequest));
+        assertEq(vm.load(address(d.resolver), bytes32(uint256(_resolverStorageSlot()) + 2)), bytes32(uint256(1)));
         address[] memory assets = new address[](1);
         assets[0] = address(rail);
         uint256[] memory amounts = new uint256[](1);
