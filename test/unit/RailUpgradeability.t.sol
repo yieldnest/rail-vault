@@ -230,6 +230,21 @@ contract RailUpgradeabilityTest is Test {
         }
     }
 
+    function testDeployedWithdrawalMinimumIsOneHundredQueuedRail() external {
+        _createPendingWithdrawal();
+        vm.startPrank(alice);
+        d.strategy.approve(address(d.processor), 1000 ether);
+        uint256 queued = d.processor.exitToQueuedRail(1000 ether, alice, 1);
+        d.qRail.approve(address(d.withdrawalRequest), queued);
+        vm.expectRevert(
+            abi.encodeWithSelector(MinAmountRequestPolicy.AmountBelowMinimum.selector, 100 ether - 1, 100 ether)
+        );
+        d.withdrawalRequest.requestWithdrawal(100 ether - 1, alice, "");
+        uint256 id = d.withdrawalRequest.requestWithdrawal(100 ether, alice, "");
+        vm.stopPrank();
+        assertEq(d.withdrawalRequest.requests(id).amountLocked, 100 ether);
+    }
+
     function _createPendingWithdrawal() internal returns (uint256 id, address bag) {
         rail.mint(alice, 3000 ether);
         vm.startPrank(alice);
@@ -273,7 +288,7 @@ contract RailUpgradeabilityTest is Test {
         assertEq(address(d.strategy.positionManager()), address(d.manager));
         assertEq(d.withdrawalRequest.ownerOf(id), alice);
         assertEq(RailProvider(d.strategy.provider()).getRate(address(rail)), 1 ether);
-        assertEq(MinAmountRequestPolicy(address(d.withdrawalRequest.requestPolicy())).minWithdrawalAmount(), 1);
+        assertEq(MinAmountRequestPolicy(address(d.withdrawalRequest.requestPolicy())).minWithdrawalAmount(), 100 ether);
         vm.warp(block.timestamp + 30 days + 1);
         uint256[] memory ids = new uint256[](1);
         ids[0] = 0;

@@ -115,7 +115,7 @@ library WithdrawalSupportDeploymentLib {
 library WithdrawalRequestDeploymentLib {
     function deploy(address admin, address qRail, address bagFactory) external returns (WithdrawalRequest) {
         WithdrawalRequest implementation = new WithdrawalRequest();
-        MinAmountRequestPolicy policy = new MinAmountRequestPolicy(1);
+        MinAmountRequestPolicy policy = new MinAmountRequestPolicy(100 ether);
         return WithdrawalRequest(
             payable(address(
                     new TransparentUpgradeableProxy(
