@@ -48,6 +48,9 @@ contract RailRewardsProcessor is ReentrancyGuard {
             if (address(token) == address(0)) revert ZeroAddress();
             uint256 amount = token.balanceOf(address(positionManager));
             if (amount == 0) continue;
+            // RAIL goes to railReceiver, cached at deployment; other tokens go to the Swapper,
+            // whose owner can independently change its beneficiary and output token. Those
+            // changes do not update railReceiver and are not revalidated here.
             address receiver = token == rail ? railReceiver : splitsSwapper;
             uint256 beforeBalance = token.balanceOf(receiver);
             positionManager.transferToken(token, receiver, amount);
