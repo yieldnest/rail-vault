@@ -28,8 +28,6 @@ contract StakedRailStrategy is BaseStrategy, LinearWithdrawalFee {
         uint256 principal = positionManager.queuePosition();
         IERC20 unlockedRail = IERC20(address(positionManager.unlockedRail()));
         unlockedRail.forceApprove(address(queuedRail), principal);
-        // TODO: Explore attacks that mint stRAIL and withdraw qRAIL in the same transaction
-        // to extract value through exchange-rate changes or rounding during queueing.
         shares = queuedRail.depositAsset(address(unlockedRail), principal, address(this));
         if (shares == 0) revert ZeroQueuedShares();
     }
