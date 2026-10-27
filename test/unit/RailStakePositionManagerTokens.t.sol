@@ -124,9 +124,36 @@ contract RailStakePositionManagerTokensTest is Test {
         vm.warp(block.timestamp + 30 days + 1);
         uint256[] memory ids = new uint256[](2);
         ids[1] = 1;
+        rail.arm(manager);
         assertEq(manager.claimMaturedPositions(ids, receiver), 100 ether);
+        _assertCallbackBlocked();
         assertEq(rail.balanceOf(receiver), 100 ether);
         assertEq(manager.unlockedRail().totalSupply(), 0);
+    }
+
+    function testEmptyBatchRespectsPause() external {
+        uint256[] memory ids = new uint256[](0);
+        assertEq(manager.claimMaturedPositions(ids, receiver), 0);
+        manager.grantRole(manager.PAUSER_ROLE(), address(this));
+        manager.pause();
+        vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
+        manager.claimMaturedPositions(ids, receiver);
+        manager.unpause();
+        assertEq(manager.claimMaturedPositions(ids, receiver), 0);
+    }
+
+    function testBatchFailureRollsBackEarlierClaim() external {
+        manager.createPosition(100 ether);
+        manager.queuePosition();
+        vm.warp(block.timestamp + 30 days + 1);
+        // The second attempt to claim the same position must revert the whole batch.
+        uint256[] memory ids = new uint256[](2);
+        vm.expectRevert(RailStakePositionManager.InvalidPositionStatus.selector);
+        manager.claimMaturedPositions(ids, receiver);
+        assertEq(rail.balanceOf(receiver), 0);
+        assertEq(manager.unlockedRail().balanceOf(address(this)), 100 ether);
+        assertEq(rail.balanceOf(address(staking)), 100 ether);
+        assertEq(manager.claimPosition(0, receiver), 100 ether);
     }
 
     function _assertCallbackBlocked() internal view {

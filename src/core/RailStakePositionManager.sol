@@ -114,6 +114,23 @@ contract RailStakePositionManager is AccessControlUpgradeable, PausableUpgradeab
         nonReentrant
         returns (uint256 amount)
     {
+        return _claimPosition(stakeId, receiver);
+    }
+
+    function claimMaturedPositions(uint256[] calldata stakeIds, address receiver)
+        external
+        onlyRole(CLAIMER_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 totalClaimed)
+    {
+        for (uint256 i = 0; i < stakeIds.length; i++) {
+            totalClaimed += _claimPosition(stakeIds[i], receiver);
+        }
+    }
+
+    function _claimPosition(uint256 stakeId, address receiver) internal returns (uint256 amount)
+    {
         uint256 locktime;
         uint256 claimedTime;
         (amount, locktime, claimedTime) = _readPosition(stakeId);
@@ -125,16 +142,6 @@ contract RailStakePositionManager is AccessControlUpgradeable, PausableUpgradeab
         rail.safeTransfer(receiver, amount);
 
         emit PositionClaimed(stakeId, amount, receiver);
-    }
-
-    function claimMaturedPositions(uint256[] calldata stakeIds, address receiver)
-        external
-        onlyRole(CLAIMER_ROLE)
-        returns (uint256 totalClaimed)
-    {
-        for (uint256 i = 0; i < stakeIds.length; i++) {
-            totalClaimed += claimPosition(stakeIds[i], receiver);
-        }
     }
 
     /// @notice Transfers any ERC-20 held by the manager; reward policy belongs to the authorized processor.
