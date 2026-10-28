@@ -75,9 +75,10 @@ contract StakedRailProcessor is AccessControl {
         assets = stRail.redeemAsset(address(qRail), shares, receiver, msg.sender);
     }
 
-    // TODO: Support exits backed by idle RAIL below stakeChunkSize. Once active positions
-    // are exhausted, that remainder cannot become qRAIL through this path, so exits may
-    // revert until more deposits permit staking or CONFIG_MANAGER_ROLE lowers the chunk size.
+    // NOTE: Idle RAIL below stakeChunkSize cannot become qRAIL through this path.
+    // Exits that need this remainder may revert until more deposits permit staking or
+    // CONFIG_MANAGER_ROLE lowers the chunk size. This is an accepted limitation,
+    // particularly relevant during vault wind-down.
     function _fillQueuedRail(uint256 shares, uint256 maxPositions) internal {
         uint256 positionsQueued;
         while (true) {

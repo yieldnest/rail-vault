@@ -82,6 +82,9 @@ contract SingleAssetFIFOResolver is Initializable {
             uint256 fullAmount = vault_.previewRedeem(shares);
             uint256 available = IERC20(asset).balanceOf(address(vault_));
             uint256 assetAmount = available < fullAmount ? available : fullAmount;
+            // This request is worth RAIL, but none is available to pay it. Stop here to preserve FIFO;
+            // retry once matured stakes are claimed. If the shares round down to zero RAIL instead,
+            // continue below to send them to the Bag and advance the queue.
             if (assetAmount == 0 && fullAmount != 0) break;
 
             uint256 burned;
