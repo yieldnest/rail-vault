@@ -3,7 +3,68 @@
 Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 `stRAIL_YieldNest_Spec.md`.
 
-## Layout
+## stRAIL governance locks
+
+`StakedRailVoting` holds non-transferable lock positions denominated in stRAIL
+shares. Users approve the contract and call `lock(shares, duration)`. Duration
+must meet an immutable deployment minimum. Each deposit creates a separate lock;
+there are no transferable receipts, top-ups that inherit an old timestamp, early
+withdrawals, administrator withdrawals, or arbitrary execution methods.
+
+For a RAILGUN proposal, a lock must exist **strictly before the start of its
+staking snapshot interval** and remain locked through the final NO-vote deadline.
+Locking after a proposal's cutoff does not grant voting rights for that proposal.
+The contract obtains the proposal and manager voting power directly from RAILGUN.
+`StakedRailStrategy` checkpoints total supply on every mint/burn so later deposits
+and exits cannot change the historical allocation denominator.
+
+The cumulative voting entitlement of a lock is the smaller of:
+
+```text
+floor(locked shares × manager's snapshot voting power / stRAIL supply before cutoff)
+current stRAIL.convertToAssets(locked shares)
+```
+
+Amounts are RAIL base units. This uses active historical backing per share rather
+than assigning votes to idle RAIL or qRAIL. All outstanding shares are included
+in the denominator; nonparticipants' votes are not redistributed. Donations
+cannot increase a lock above its historical allocation. A lower current value
+can reduce unused entitlement, but votes already sent upstream cannot be undone.
+
+The owner calls `vote(lockId, proposalId, railAmount, affirmative, snapshotHint)`.
+Votes forward immediately as the manager's registered voting key. A lock can
+split its allocation between YES and NO and use its allocation independently on
+multiple proposals. There is no choice-changing or revocation mechanism. The
+contract enforces RAILGUN's opening, YES deadline, and NO-only veto deadline.
+`votingPower` returns the cumulative cap; subtract `votesUsed` for available
+power (clamped to zero if valuation has fallen).
+
+At expiry, `withdraw(lockId)` returns the same number of stRAIL shares to their
+owner, independent of upstream voting permissions. Shares retain vault exposure
+while locked. The lock prevents selling or redeeming those shares through this
+contract, but does not prevent external hedging or sale of account control.
+
+### Deployment and trust boundaries
+
+For an existing deployment, upgrade the strategy and position manager to these
+implementations first. Call `checkpointTotalSupply()` to start history; old
+history cannot be reconstructed by this implementation. Locks become eligible
+only for later interval cutoffs. The deployment script starts this history too.
+
+`script/DeployStakedRailVoting.s.sol` reads `ST_RAIL`, `RAILGUN_VOTING`, and
+`MINIMUM_LOCK_DURATION` (seconds). It deploys the immutable escrow and calls the
+manager's `setVotingKey`. Execute as a holder of the manager's
+`DEFAULT_ADMIN_ROLE`, or deploy and perform the administrative registration
+separately through governance. No deployment is performed automatically.
+
+There is no trusted price or tally input. Existing proxy administrators and vault
+configuration roles remain trusted; the manager administrator can replace or
+clear the voting key. The script requires live accounting at escrow deployment;
+governance must retain that configuration. The escrow itself is not upgradeable
+and has no administrator. Sponsorship and proposal creation remain external to
+this escrow.
+
+## Contract layout
 
 - `lib/yieldnest-vault`: YieldNest vault submodule.
 - `lib/yieldnest-vault-withdrawals`: YieldNest withdrawal request, Bag, factory, policy, and withdrawer interfaces.
