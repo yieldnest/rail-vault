@@ -13,13 +13,13 @@ contract DeployStakedRailVoting is Script {
     function run() external returns (StakedRailVoting escrow) {
         StakedRailStrategy strategy = StakedRailStrategy(payable(vm.envAddress("ST_RAIL")));
         IRailgunVoting voting = IRailgunVoting(vm.envAddress("RAILGUN_VOTING"));
-        uint256 duration = vm.envUint("MINIMUM_LOCK_DURATION");
+        uint256 cooldown = vm.envUint("UNLOCK_COOLDOWN");
         require(address(strategy.hooks()) == address(0), "existing hooks require explicit migration");
         vm.startBroadcast();
         StakedRailSupplyHook hook = new StakedRailSupplyHook(IVault(address(strategy)));
         strategy.setHooks(address(hook));
         hook.checkpoint();
-        escrow = new StakedRailVoting(strategy, voting, duration);
+        escrow = new StakedRailVoting(strategy, voting, cooldown);
         strategy.positionManager().setVotingKey(voting, address(escrow));
         vm.stopBroadcast();
     }

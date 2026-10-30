@@ -32,8 +32,8 @@ contract StakedRailVotingTest is RailSystemFixture {
         _deposit(alice, 3000 ether);
         _deposit(bob, 7000 ether);
         d.processor.rebalanceStaking(10);
-        aliceLock = _lock(alice, 3000 ether, 10 days);
-        bobLock = _lock(bob, 7000 ether, 10 days);
+        aliceLock = _lock(alice, 3000 ether);
+        bobLock = _lock(bob, 7000 ether);
         cutoff = block.timestamp + 1 days;
         vm.mockCall(
             address(staking),
@@ -59,10 +59,10 @@ contract StakedRailVotingTest is RailSystemFixture {
         );
     }
 
-    function _lock(address owner, uint256 shares, uint256 duration) internal returns (uint256 id) {
+    function _lock(address owner, uint256 shares) internal returns (uint256 id) {
         vm.startPrank(owner);
         d.strategy.approve(address(escrow), shares);
-        id = escrow.lock(shares, duration);
+        id = escrow.lock(shares);
         vm.stopPrank();
     }
 
@@ -89,16 +89,19 @@ contract StakedRailVotingTest is RailSystemFixture {
         escrow.vote(aliceLock, 1, 1, true, 0);
         vm.expectRevert(StakedRailVoting.NotOwner.selector);
         escrow.withdraw(aliceLock);
+        vm.expectRevert(StakedRailVoting.NotOwner.selector);
+        escrow.requestUnlock(aliceLock);
     }
 
-    function testRemovingHookBlocksVotingAndNewLocksButNotExpiredWithdrawals() external {
+    function testRemovingHookBlocksVotingAndNewLocksButNotUnlockRequestsOrWithdrawals() external {
         d.strategy.setHooks(address(0));
         vm.startPrank(alice);
         vm.expectRevert(StakedRailSupplyHook.InactiveHook.selector);
         escrow.vote(aliceLock, 1, 1, true, 0);
         vm.expectRevert(StakedRailSupplyHook.InactiveHook.selector);
-        escrow.lock(1, 10 days);
-        vm.warp(110 days);
+        escrow.lock(1);
+        escrow.requestUnlock(aliceLock);
+        vm.warp(block.timestamp + 7 days);
         escrow.withdraw(aliceLock);
         vm.stopPrank();
         assertEq(d.strategy.balanceOf(alice), 3000 ether);
@@ -115,18 +118,20 @@ contract StakedRailVotingTest is RailSystemFixture {
         assertEq(hook.totalSupplyBefore(block.timestamp), 11_000 ether);
     }
 
-    function testExpiredWithdrawnSharesCannotBeRelockedToReuseOldVotes() external {
-        vm.warp(110 days);
+    function testWithdrawnSharesCannotBeRelockedToReuseOldVotes() external {
+        vm.prank(alice);
+        escrow.requestUnlock(aliceLock);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(alice);
         escrow.withdraw(aliceLock);
-        uint256 newLock = _lock(alice, 3000 ether, 10 days);
+        uint256 newLock = _lock(alice, 3000 ether);
         assertEq(escrow.votingPower(newLock, 1, 0), 0);
         assertEq(escrow.votingPower(aliceLock, 1, 0), 0);
     }
 
     function testLateDepositCannotVoteAndDoesNotDiluteHistoricalAllocation() external {
         uint256 shares = _deposit(alice, 10_000 ether);
-        uint256 late = _lock(alice, shares, 10 days);
+        uint256 late = _lock(alice, shares);
         assertEq(escrow.votingPower(late, 1, 0), 0);
         assertEq(escrow.votingPower(aliceLock, 1, 0), 3000 ether);
         vm.prank(alice);
@@ -134,22 +139,35 @@ contract StakedRailVotingTest is RailSystemFixture {
         escrow.vote(late, 1, 1, true, 0);
     }
 
-    function testLockMustCoverFinalNoVotingDeadline() external {
-        // A later proposal starts before expiry but ends after the existing locks expire.
-        voting.prepare(3, cutoff + 4 days, cutoff / 1 days);
-        assertEq(escrow.votingPower(aliceLock, 3, 0), 0);
+    function testLockDoesNotExpireWithoutUnlockRequest() external {
+        vm.warp(cutoff + 365 days);
+        voting.prepare(3, block.timestamp - 3 days, cutoff / 1 days);
+        assertEq(escrow.votingPower(aliceLock, 3, 0), 3000 ether);
+        vm.startPrank(alice);
+        escrow.vote(aliceLock, 3, 1, true, 0);
+        vm.expectRevert(StakedRailVoting.StillLocked.selector);
+        escrow.withdraw(aliceLock);
+        vm.stopPrank();
     }
 
-    function testWithdrawOnlyAtExpiryAndNoDoubleWithdrawal() external {
+    function testWithdrawRequiresRequestAndFullCooldownAndNoDoubleWithdrawal() external {
         vm.startPrank(alice);
         vm.expectRevert(StakedRailVoting.StillLocked.selector);
         escrow.withdraw(aliceLock);
-        vm.warp(110 days);
+        escrow.requestUnlock(aliceLock);
+        vm.expectRevert(StakedRailVoting.InvalidLock.selector);
+        escrow.requestUnlock(aliceLock);
+        vm.warp(block.timestamp + 7 days - 1);
+        vm.expectRevert(StakedRailVoting.StillLocked.selector);
+        escrow.withdraw(aliceLock);
+        vm.warp(block.timestamp + 1);
         escrow.withdraw(aliceLock);
         assertEq(d.strategy.balanceOf(alice), 3000 ether);
         assertEq(escrow.totalLocked(), 7000 ether);
         vm.expectRevert(StakedRailVoting.InvalidLock.selector);
         escrow.withdraw(aliceLock);
+        vm.expectRevert(StakedRailVoting.InvalidLock.selector);
+        escrow.requestUnlock(aliceLock);
         vm.stopPrank();
         assertEq(escrow.votingPower(aliceLock, 1, 0), 0);
     }
@@ -160,7 +178,11 @@ contract StakedRailVotingTest is RailSystemFixture {
         vm.expectRevert(bytes("not voting key"));
         escrow.vote(aliceLock, 1, 1000 ether, true, 0);
         assertEq(escrow.votesUsed(1, aliceLock), 0);
-        vm.warp(110 days);
+        (,,,, uint256 lastVoteEnd,) = escrow.locks(aliceLock);
+        assertEq(lastVoteEnd, 0);
+        vm.prank(alice);
+        escrow.requestUnlock(aliceLock);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(alice);
         escrow.withdraw(aliceLock);
         assertEq(d.strategy.balanceOf(alice), 3000 ether);
@@ -188,8 +210,8 @@ contract StakedRailVotingTest is RailSystemFixture {
         uint256 bobShares = _deposit(bob, 1000 ether);
         assertEq(bobShares, 500 ether);
         d.processor.rebalanceStaking(3);
-        uint256 a = _lock(alice, 1000 ether, 10 days);
-        uint256 b = _lock(bob, bobShares, 10 days);
+        uint256 a = _lock(alice, 1000 ether);
+        uint256 b = _lock(bob, bobShares);
         cutoff = block.timestamp + 1 days;
         vm.mockCall(
             address(staking),
@@ -246,9 +268,7 @@ contract StakedRailVotingTest is RailSystemFixture {
 
     function testInvalidLocksAndConfiguration() external {
         vm.expectRevert(StakedRailVoting.InvalidLock.selector);
-        escrow.lock(0, 7 days);
-        vm.expectRevert(StakedRailVoting.InvalidLock.selector);
-        escrow.lock(1, 7 days - 1);
+        escrow.lock(0);
         vm.expectRevert(StakedRailVoting.InvalidConfiguration.selector);
         new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), 0);
         MockRailgunVoting wrong = new MockRailgunVoting(address(0xBEEF));
@@ -257,6 +277,80 @@ contract StakedRailVotingTest is RailSystemFixture {
         vm.prank(alice);
         vm.expectRevert();
         d.manager.setVotingKey(IRailgunVoting(address(voting)), alice);
+    }
+
+    function testUnlockRequestImmediatelyDisablesFurtherVotesButPreservesCastVotes() external {
+        vm.startPrank(alice);
+        escrow.vote(aliceLock, 1, 1000 ether, true, 0);
+        escrow.requestUnlock(aliceLock);
+        assertEq(escrow.votingPower(aliceLock, 1, 0), 0);
+        assertEq(escrow.votingPower(aliceLock, 2, 0), 0);
+        assertEq(escrow.votesUsed(1, aliceLock), 1000 ether);
+        assertEq(voting.getVotes(1, address(d.manager)), 1000 ether);
+        vm.expectRevert(StakedRailVoting.IneligibleLock.selector);
+        escrow.vote(aliceLock, 1, 1, false, 0);
+        vm.expectRevert(StakedRailVoting.IneligibleLock.selector);
+        escrow.vote(aliceLock, 2, 1, true, 0);
+        vm.stopPrank();
+        // Another holder's lock remains eligible; the requesting holder's votes are not redistributed.
+        assertEq(escrow.votingPower(bobLock, 2, 0), 7000 ether);
+        vm.warp(block.timestamp + 8 days);
+        voting.prepare(3, block.timestamp - 3 days, cutoff / 1 days);
+        assertEq(escrow.votingPower(aliceLock, 3, 0), 0);
+        vm.prank(alice);
+        vm.expectRevert(StakedRailVoting.IneligibleLock.selector);
+        escrow.vote(aliceLock, 3, 1, true, 0);
+    }
+
+    function testVotingAtLastMomentStillRequiresFullCooldownAfterRequest() external {
+        uint256 finalDeadline = cutoff + 1 hours + voting.VOTING_NAY_END_OFFSET();
+        vm.warp(finalDeadline - 1);
+        vm.startPrank(alice);
+        escrow.vote(aliceLock, 1, 1, false, 0);
+        escrow.requestUnlock(aliceLock);
+        (,,, uint256 unlockAt, uint256 lastVoteEnd,) = escrow.locks(aliceLock);
+        assertEq(unlockAt, finalDeadline - 1 + 7 days);
+        assertEq(lastVoteEnd, finalDeadline);
+        vm.warp(finalDeadline);
+        vm.expectRevert(StakedRailVoting.StillLocked.selector);
+        escrow.withdraw(aliceLock);
+        vm.warp(unlockAt);
+        escrow.withdraw(aliceLock);
+        vm.stopPrank();
+    }
+
+    function testFuzzUnlockWaitsForBothCooldownAndLatestVotedDeadline(uint256 cooldown) external {
+        cooldown = bound(cooldown, 1, 30 days);
+        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), cooldown);
+        d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));
+        _deposit(alice, 100 ether);
+        uint256 id = _lock(alice, 100 ether);
+        // Use the next interval boundary, strictly after this new lock.
+        cutoff = (block.timestamp / 1 days + 1) * 1 days;
+        _snapshot(10_000 ether);
+        voting.prepare(3, cutoff + 1 hours, cutoff / 1 days);
+        voting.prepare(4, cutoff + 2 hours, cutoff / 1 days);
+        vm.warp(cutoff + 3 days);
+        vm.startPrank(alice);
+        // Voting on an earlier-ending proposal last must not shorten the deadline.
+        escrow.vote(id, 4, 1, true, 0);
+        escrow.vote(id, 3, 1, false, 0);
+        uint256 deadline = cutoff + 2 hours + voting.VOTING_NAY_END_OFFSET();
+        uint256 expectedUnlock = block.timestamp + cooldown;
+        if (deadline > expectedUnlock) expectedUnlock = deadline;
+        escrow.requestUnlock(id);
+        (,,, uint256 unlockAt, uint256 lastVoteEnd,) = escrow.locks(id);
+        assertEq(lastVoteEnd, deadline);
+        assertEq(unlockAt, expectedUnlock);
+        assertEq(escrow.totalLocked(), 100 ether);
+        vm.warp(unlockAt - 1);
+        vm.expectRevert(StakedRailVoting.StillLocked.selector);
+        escrow.withdraw(id);
+        vm.warp(unlockAt);
+        escrow.withdraw(id);
+        vm.stopPrank();
+        assertEq(d.strategy.balanceOf(alice), 100 ether);
+        assertEq(escrow.totalLocked(), 0);
     }
 
     function testFuzzSplitVotesCannotExceedAllocation(uint256 first) external {

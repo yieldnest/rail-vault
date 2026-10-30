@@ -10,7 +10,7 @@ import {RailStakePositionManager} from "../core/RailStakePositionManager.sol";
 import {StakedRailSupplyHook} from "./StakedRailSupplyHook.sol";
 import {IRailgunVoting, IRailgunVotingSnapshots} from "../railgun/IRailgunVoting.sol";
 
-/// @notice Non-transferable, fixed-term stRAIL locks that forward fractional RAILGUN votes.
+/// @notice Non-transferable stRAIL locks with a requested-unlock cooldown that forward fractional RAILGUN votes.
 /// @dev No administrator, arbitrary calls, rescue of locked shares, or caller-supplied valuation.
 contract StakedRailVoting is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -19,7 +19,8 @@ contract StakedRailVoting is ReentrancyGuard {
         address owner;
         uint256 shares;
         uint256 createdAt;
-        uint256 unlockAt;
+        uint256 unlockAt; // Zero until unlock is requested.
+        uint256 lastVoteEnd;
         bool withdrawn;
     }
 
@@ -28,13 +29,14 @@ contract StakedRailVoting is ReentrancyGuard {
     IRailgunVoting public immutable voting;
     IRailgunVotingSnapshots public immutable snapshots;
     StakedRailSupplyHook public immutable supplyHook;
-    uint256 public immutable minimumLockDuration;
+    uint256 public immutable unlockCooldown;
     uint256 public totalLocked;
     Lock[] public locks;
     // The same lock may split YES/NO and participate independently in multiple proposals.
     mapping(uint256 proposalId => mapping(uint256 lockId => uint256 amount)) public votesUsed;
 
-    event Locked(uint256 indexed lockId, address indexed owner, uint256 shares, uint256 unlockAt);
+    event Locked(uint256 indexed lockId, address indexed owner, uint256 shares);
+    event UnlockRequested(uint256 indexed lockId, address indexed owner, uint256 unlockAt);
     event Withdrawn(uint256 indexed lockId, address indexed owner, uint256 shares);
     event VoteForwarded(uint256 indexed proposalId, uint256 indexed lockId, bool affirmative, uint256 railVotes);
 
@@ -46,8 +48,8 @@ contract StakedRailVoting is ReentrancyGuard {
     error VotingClosed();
     error InsufficientVotingPower();
 
-    constructor(StakedRailStrategy stRail_, IRailgunVoting voting_, uint256 minimumLockDuration_) {
-        if (address(stRail_).code.length == 0 || address(voting_).code.length == 0 || minimumLockDuration_ == 0) {
+    constructor(StakedRailStrategy stRail_, IRailgunVoting voting_, uint256 unlockCooldown_) {
+        if (address(stRail_).code.length == 0 || address(voting_).code.length == 0 || unlockCooldown_ == 0) {
             revert InvalidConfiguration();
         }
         stRail = stRail_;
@@ -60,27 +62,37 @@ contract StakedRailVoting is ReentrancyGuard {
         supplyHook = StakedRailSupplyHook(address(stRail_.hooks()));
         if (address(supplyHook.VAULT()) != address(stRail_)) revert InvalidConfiguration();
         supplyHook.assertActive();
-        minimumLockDuration = minimumLockDuration_;
+        unlockCooldown = unlockCooldown_;
     }
 
-    /// @notice Lock shares for a user-selected duration above the immutable minimum.
+    /// @notice Lock shares indefinitely until the owner requests an unlock.
     /// @dev Each deposit is a separate position; top-ups cannot inherit an older position's eligibility.
-    function lock(uint256 shares, uint256 duration) external nonReentrant returns (uint256 id) {
+    function lock(uint256 shares) external nonReentrant returns (uint256 id) {
         supplyHook.assertActive();
-        if (shares == 0 || duration < minimumLockDuration) revert InvalidLock();
+        if (shares == 0) revert InvalidLock();
         id = locks.length;
-        locks.push(Lock(msg.sender, shares, block.timestamp, block.timestamp + duration, false));
+        locks.push(Lock(msg.sender, shares, block.timestamp, 0, 0, false));
         totalLocked += shares;
         IERC20(address(stRail)).safeTransferFrom(msg.sender, address(this), shares);
-        emit Locked(id, msg.sender, shares, block.timestamp + duration);
+        emit Locked(id, msg.sender, shares);
     }
 
-    /// @notice Return all shares of an expired lock to its owner, even if voting is disabled upstream.
+    /// @notice Stop voting and start the withdrawal cooldown. Requests cannot be cancelled or restarted.
+    /// @dev Shares also remain held through the latest final NO-vote deadline this lock voted on.
+    function requestUnlock(uint256 id) external nonReentrant {
+        Lock storage position = locks[id];
+        if (msg.sender != position.owner) revert NotOwner();
+        if (position.withdrawn || position.unlockAt != 0) revert InvalidLock();
+        position.unlockAt = Math.max(block.timestamp + unlockCooldown, position.lastVoteEnd);
+        emit UnlockRequested(id, msg.sender, position.unlockAt);
+    }
+
+    /// @notice Return shares after a requested unlock matures, even if voting is disabled upstream.
     function withdraw(uint256 id) external nonReentrant {
         Lock storage position = locks[id];
         if (msg.sender != position.owner) revert NotOwner();
         if (position.withdrawn) revert InvalidLock();
-        if (block.timestamp < position.unlockAt) revert StillLocked();
+        if (position.unlockAt == 0 || block.timestamp < position.unlockAt) revert StillLocked();
         position.withdrawn = true;
         totalLocked -= position.shares;
         IERC20(address(stRail)).safeTransfer(position.owner, position.shares);
@@ -96,7 +108,7 @@ contract StakedRailVoting is ReentrancyGuard {
         uint256 cutoff = snapshots.DEPLOY_TIME() + interval * snapshots.SNAPSHOT_INTERVAL();
         if (
             calledAt == 0 || cutoff > block.timestamp || position.withdrawn || position.createdAt >= cutoff
-                || position.unlockAt < calledAt + voting.VOTING_NAY_END_OFFSET()
+                || position.unlockAt != 0
         ) return 0;
         uint256 supply = supplyHook.totalSupplyBefore(cutoff);
         if (supply == 0) return 0;
@@ -124,6 +136,7 @@ contract StakedRailVoting is ReentrancyGuard {
         uint256 used = votesUsed[proposalId][id];
         if (amount == 0 || used + amount > power) revert InsufficientVotingPower();
         votesUsed[proposalId][id] = used + amount;
+        position.lastVoteEnd = Math.max(position.lastVoteEnd, calledAt + voting.VOTING_NAY_END_OFFSET());
         voting.vote(proposalId, amount, affirmative, address(positionManager), hint);
         emit VoteForwarded(proposalId, id, affirmative, amount);
     }
