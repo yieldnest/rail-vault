@@ -6,8 +6,12 @@ import {MockRailgunVoting} from "../mocks/MockRailgunVoting.sol";
 import {StakedRailVoting} from "../../src/governance/StakedRailVoting.sol";
 import {IRailgunVoting, IRailgunVotingSnapshots} from "../../src/railgun/IRailgunVoting.sol";
 
+import {StakedRailSupplyHook} from "../../src/governance/StakedRailSupplyHook.sol";
+import {IVault} from "@yieldnest-vault/interface/IVault.sol";
+
 contract StakedRailVotingTest is RailSystemFixture {
     StakedRailVoting internal escrow;
+    StakedRailSupplyHook internal hook;
     MockRailgunVoting internal voting;
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
@@ -18,6 +22,10 @@ contract StakedRailVotingTest is RailSystemFixture {
     function setUp() public {
         vm.warp(100 days);
         _deploySystem();
+        hook = new StakedRailSupplyHook(IVault(address(d.strategy)));
+        d.strategy.grantRole(d.strategy.HOOKS_MANAGER_ROLE(), address(this));
+        d.strategy.setHooks(address(hook));
+        hook.checkpoint();
         voting = new MockRailgunVoting(address(staking));
         escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), 7 days);
         d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));
@@ -83,15 +91,28 @@ contract StakedRailVotingTest is RailSystemFixture {
         escrow.withdraw(aliceLock);
     }
 
+    function testRemovingHookBlocksVotingAndNewLocksButNotExpiredWithdrawals() external {
+        d.strategy.setHooks(address(0));
+        vm.startPrank(alice);
+        vm.expectRevert(StakedRailSupplyHook.InactiveHook.selector);
+        escrow.vote(aliceLock, 1, 1, true, 0);
+        vm.expectRevert(StakedRailSupplyHook.InactiveHook.selector);
+        escrow.lock(1, 10 days);
+        vm.warp(110 days);
+        escrow.withdraw(aliceLock);
+        vm.stopPrank();
+        assertEq(d.strategy.balanceOf(alice), 3000 ether);
+    }
+
     function testHistoricalSupplyUsesStateStrictlyBeforeCutoff() external {
-        assertEq(d.strategy.totalSupplyBefore(cutoff), 10_000 ether);
+        assertEq(hook.totalSupplyBefore(cutoff), 10_000 ether);
         _deposit(alice, 1000 ether);
-        d.strategy.checkpointTotalSupply();
-        assertEq(d.strategy.totalSupplyBefore(cutoff), 10_000 ether);
+        hook.checkpoint();
+        assertEq(hook.totalSupplyBefore(cutoff), 10_000 ether);
         // A checkpoint at this timestamp is excluded until time advances.
-        assertEq(d.strategy.totalSupplyBefore(block.timestamp), 10_000 ether);
+        assertEq(hook.totalSupplyBefore(block.timestamp), 10_000 ether);
         vm.warp(block.timestamp + 1);
-        assertEq(d.strategy.totalSupplyBefore(block.timestamp), 11_000 ether);
+        assertEq(hook.totalSupplyBefore(block.timestamp), 11_000 ether);
     }
 
     function testExpiredWithdrawnSharesCannotBeRelockedToReuseOldVotes() external {
@@ -155,6 +176,10 @@ contract StakedRailVotingTest is RailSystemFixture {
     function testAppreciatedSharesCarryMoreThanOneRailVotePerShare() external {
         vm.warp(200 days);
         _deploySystem();
+        hook = new StakedRailSupplyHook(IVault(address(d.strategy)));
+        d.strategy.grantRole(d.strategy.HOOKS_MANAGER_ROLE(), address(this));
+        d.strategy.setHooks(address(hook));
+        hook.checkpoint();
         voting = new MockRailgunVoting(address(staking));
         escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), 7 days);
         d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));

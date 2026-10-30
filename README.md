@@ -15,8 +15,10 @@ For a RAILGUN proposal, a lock must exist **strictly before the start of its
 staking snapshot interval** and remain locked through the final NO-vote deadline.
 Locking after a proposal's cutoff does not grant voting rights for that proposal.
 The contract obtains the proposal and manager voting power directly from RAILGUN.
-`StakedRailStrategy` checkpoints total supply on every mint/burn so later deposits
-and exits cannot change the historical allocation denominator.
+`StakedRailSupplyHook` records total supply through YieldNest deposit, mint,
+withdraw, redeem, and accounting callbacks. Later deposits and exits cannot
+change the historical allocation denominator. The strategy itself contains no
+governance checkpoint logic.
 
 The cumulative voting entitlement of a lock is the smaller of:
 
@@ -46,16 +48,27 @@ contract, but does not prevent external hedging or sale of account control.
 
 ### Deployment and trust boundaries
 
-For an existing deployment, upgrade the strategy and position manager to these
-implementations first. Call `checkpointTotalSupply()` to start history; old
-history cannot be reconstructed by this implementation. Locks become eligible
-only for later interval cutoffs. The deployment script starts this history too.
+The position manager must expose `setVotingKey`; no governance changes to the
+strategy implementation are required. Install `StakedRailSupplyHook` directly
+with `setHooks`, then call its `checkpoint()` to start history before deploying
+the escrow. Earlier history cannot be reconstructed. Locks become eligible only
+for later interval cutoffs. The hook has fixed callback settings and cannot mint
+shares. This deployment does not compose it with fee hooks or MetaHooks.
 
 `script/DeployStakedRailVoting.s.sol` reads `ST_RAIL`, `RAILGUN_VOTING`, and
-`MINIMUM_LOCK_DURATION` (seconds). It deploys the immutable escrow and calls the
-manager's `setVotingKey`. Execute as a holder of the manager's
-`DEFAULT_ADMIN_ROLE`, or deploy and perform the administrative registration
-separately through governance. No deployment is performed automatically.
+`MINIMUM_LOCK_DURATION` (seconds). It deploys, installs, and initializes the hook,
+then deploys the immutable escrow and calls the manager's `setVotingKey`. Execute
+as a holder of both the strategy's `HOOKS_MANAGER_ROLE` and the manager's
+`DEFAULT_ADMIN_ROLE`, or perform installation and registration separately through
+governance. The script rejects an existing hook instead of replacing it. No
+deployment is performed automatically.
+
+Removing the hook blocks new locks and voting; expired locks remain withdrawable.
+The vault does not notify hooks when they are removed: removal followed by
+reinstallation can leave undetectable gaps if supply returns to its recorded
+value. Governance must never reuse this history after detaching the hook. Deploy
+a new hook and escrow, initialize fresh history, and register the new voting key
+instead. Current-supply checks detect mismatches, not every possible history gap.
 
 There is no trusted price or tally input. Existing proxy administrators and vault
 configuration roles remain trusted; the manager administrator can replace or

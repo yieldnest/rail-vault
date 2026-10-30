@@ -7,6 +7,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {StakedRailStrategy} from "../core/StakedRailStrategy.sol";
 import {RailStakePositionManager} from "../core/RailStakePositionManager.sol";
+import {StakedRailSupplyHook} from "./StakedRailSupplyHook.sol";
 import {IRailgunVoting, IRailgunVotingSnapshots} from "../railgun/IRailgunVoting.sol";
 
 /// @notice Non-transferable, fixed-term stRAIL locks that forward fractional RAILGUN votes.
@@ -26,6 +27,7 @@ contract StakedRailVoting is ReentrancyGuard {
     RailStakePositionManager public immutable positionManager;
     IRailgunVoting public immutable voting;
     IRailgunVotingSnapshots public immutable snapshots;
+    StakedRailSupplyHook public immutable supplyHook;
     uint256 public immutable minimumLockDuration;
     uint256 public totalLocked;
     Lock[] public locks;
@@ -55,12 +57,16 @@ contract StakedRailVoting is ReentrancyGuard {
             revert InvalidConfiguration();
         }
         snapshots = IRailgunVotingSnapshots(address(positionManager.staking()));
+        supplyHook = StakedRailSupplyHook(address(stRail_.hooks()));
+        if (address(supplyHook.VAULT()) != address(stRail_)) revert InvalidConfiguration();
+        supplyHook.assertActive();
         minimumLockDuration = minimumLockDuration_;
     }
 
     /// @notice Lock shares for a user-selected duration above the immutable minimum.
     /// @dev Each deposit is a separate position; top-ups cannot inherit an older position's eligibility.
     function lock(uint256 shares, uint256 duration) external nonReentrant returns (uint256 id) {
+        supplyHook.assertActive();
         if (shares == 0 || duration < minimumLockDuration) revert InvalidLock();
         id = locks.length;
         locks.push(Lock(msg.sender, shares, block.timestamp, block.timestamp + duration, false));
@@ -92,7 +98,7 @@ contract StakedRailVoting is ReentrancyGuard {
             calledAt == 0 || cutoff > block.timestamp || position.withdrawn || position.createdAt >= cutoff
                 || position.unlockAt < calledAt + voting.VOTING_NAY_END_OFFSET()
         ) return 0;
-        uint256 supply = stRail.totalSupplyBefore(cutoff);
+        uint256 supply = supplyHook.totalSupplyBefore(cutoff);
         if (supply == 0) return 0;
         uint256 eligibleRail = snapshots.accountSnapshotAt(address(positionManager), interval, hint).votingPower;
         uint256 historicalAllocation = Math.mulDiv(position.shares, eligibleRail, supply);
