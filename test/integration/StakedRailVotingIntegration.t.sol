@@ -9,6 +9,9 @@ import {StakedRailVoting} from "../../src/governance/StakedRailVoting.sol";
 import {IRailgunVoting, IRailgunVotingSnapshots} from "../../src/railgun/IRailgunVoting.sol";
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 
+import {StakedRailSupplyHook} from "../../src/governance/StakedRailSupplyHook.sol";
+import {IVault} from "@yieldnest-vault/interface/IVault.sol";
+
 interface IRailgunProposalCreation {
     struct Call {
         address callContract;
@@ -41,6 +44,10 @@ contract StakedRailVotingIntegrationTest is Test {
             })
         );
         RailStrategyDeployer.Deployed memory d = deployer.deploy();
+        StakedRailSupplyHook hook = new StakedRailSupplyHook(IVault(address(d.strategy)));
+        d.strategy.grantRole(d.strategy.HOOKS_MANAGER_ROLE(), address(this));
+        d.strategy.setHooks(address(hook));
+        hook.checkpoint();
         StakedRailVoting escrow = new StakedRailVoting(d.strategy, voting, 7 days);
         d.manager.setVotingKey(voting, address(escrow));
         assertEq(voting.votingKey(address(d.manager)), address(escrow));
