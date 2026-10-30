@@ -10,6 +10,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IRailgunStaking} from "../railgun/IRailgunStaking.sol";
+import {IRailgunVoting} from "../railgun/IRailgunVoting.sol";
 import {DoubleEndedQueue} from "@openzeppelin/contracts/utils/structs/DoubleEndedQueue.sol";
 import {RailReceiptToken} from "./RailReceiptToken.sol";
 
@@ -36,6 +37,15 @@ contract RailStakePositionManager is AccessControlUpgradeable, PausableUpgradeab
     event PositionQueued(uint256 indexed stakeId, uint256 principal, uint256 locktime);
     event PositionClaimed(uint256 indexed stakeId, uint256 principal, address indexed receiver);
     event TokenTransferred(address indexed token, address indexed receiver, uint256 amount);
+    event VotingKeyConfigured(address indexed voting, address indexed key);
+
+    /// @notice Authorizes a voting proxy without delegating stakes or their rewards.
+    /// @dev Governance can replace or clear this key; this remains an administrative trust boundary.
+    function setVotingKey(IRailgunVoting voting, address key) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (voting.STAKING_CONTRACT() != address(staking)) revert InvalidVotingContract();
+        voting.setVotingKey(key);
+        emit VotingKeyConfigured(address(voting), key);
+    }
 
     constructor() {
         _disableInitializers();
@@ -207,6 +217,7 @@ contract RailStakePositionManager is AccessControlUpgradeable, PausableUpgradeab
     }
 
     error ZeroAddress();
+    error InvalidVotingContract();
     error InvalidPositionStatus();
     error PositionNotMatured();
 }
