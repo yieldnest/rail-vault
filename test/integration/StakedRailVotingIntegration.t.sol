@@ -60,13 +60,13 @@ contract StakedRailVotingIntegrationTest is Test {
         rail.approve(address(d.strategy), 300_000 ether);
         d.strategy.deposit(300_000 ether, alice);
         d.strategy.approve(address(escrow), 300_000 ether);
-        uint256 a = escrow.lock(300_000 ether, 10 days);
+        uint256 a = escrow.lock(300_000 ether);
         vm.stopPrank();
         vm.startPrank(bob);
         rail.approve(address(d.strategy), 700_000 ether);
         d.strategy.deposit(700_000 ether, bob);
         d.strategy.approve(address(escrow), 700_000 ether);
-        uint256 b = escrow.lock(700_000 ether, 10 days);
+        uint256 b = escrow.lock(700_000 ether);
         vm.stopPrank();
         d.processor.rebalanceStaking(10);
 
@@ -99,7 +99,14 @@ contract StakedRailVotingIntegrationTest is Test {
         escrow.vote(a, proposal, 1, true, 0);
         vm.expectRevert(StakedRailVoting.StillLocked.selector);
         escrow.withdraw(a);
-        vm.warp(block.timestamp + 10 days);
+        escrow.requestUnlock(a);
+        assertEq(escrow.votingPower(a, proposal, 0), 0);
+        vm.expectRevert(StakedRailVoting.IneligibleLock.selector);
+        escrow.vote(a, proposal, 1, false, 0);
+        vm.warp(block.timestamp + 7 days - 1);
+        vm.expectRevert(StakedRailVoting.StillLocked.selector);
+        escrow.withdraw(a);
+        vm.warp(block.timestamp + 1);
         escrow.withdraw(a);
         vm.stopPrank();
         assertEq(d.strategy.balanceOf(alice), 300_000 ether);

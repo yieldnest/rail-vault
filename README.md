@@ -6,13 +6,15 @@ Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 ## stRAIL governance locks
 
 `StakedRailVoting` holds non-transferable lock positions denominated in stRAIL
-shares. Users approve the contract and call `lock(shares, duration)`. Duration
-must meet an immutable deployment minimum. Each deposit creates a separate lock;
-there are no transferable receipts, top-ups that inherit an old timestamp, early
-withdrawals, administrator withdrawals, or arbitrary execution methods.
+shares. Users approve the contract and call `lock(shares)`. Shares stay locked
+indefinitely until the owner calls `requestUnlock(lockId)`. Each deposit creates
+a separate lock. There are no transferable receipts, top-ups that inherit an old
+timestamp, early withdrawals, administrator withdrawals, or arbitrary execution
+methods.
 
 For a RAILGUN proposal, a lock must exist **strictly before the start of its
-staking snapshot interval** and remain locked through the final NO-vote deadline.
+staking snapshot interval** and have no pending unlock request. Each successful
+vote records the latest final NO-vote deadline the lock must remain held through.
 Locking after a proposal's cutoff does not grant voting rights for that proposal.
 The contract obtains the proposal and manager voting power directly from RAILGUN.
 `StakedRailSupplyHook` records total supply through YieldNest deposit, mint,
@@ -41,10 +43,34 @@ contract enforces RAILGUN's opening, YES deadline, and NO-only veto deadline.
 `votingPower` returns the cumulative cap; subtract `votesUsed` for available
 power (clamped to zero if valuation has fallen).
 
-At expiry, `withdraw(lockId)` returns the same number of stRAIL shares to their
-owner, independent of upstream voting permissions. Shares retain vault exposure
-while locked. The lock prevents selling or redeeming those shares through this
-contract, but does not prevent external hedging or sale of account control.
+`requestUnlock(lockId)` immediately stops further voting for that lock, without
+revoking votes already cast. It sets the withdrawal time to:
+
+```text
+max(unlock request time + unlockCooldown, latest voted proposal's final NO-vote deadline)
+```
+
+The cooldown is immutable and configured at deployment. Requests cannot be
+cancelled or restarted, and time spent locked before requesting does not count
+toward the cooldown. Even a vote at the end of a voting window is followed by a
+full cooldown if the user requests an unlock immediately afterward. Withdrawal
+does not wait for proposal execution.
+
+At that time, `withdraw(lockId)` returns the same number of stRAIL shares to their
+owner. Unlock requests and withdrawals work independently of the supply hook or
+upstream voting permissions. To vote again after requesting an unlock, withdraw
+and create a fresh lock, eligible only for subsequent snapshot cutoffs. Shares
+retain vault exposure while locked. The lock prevents selling or redeeming those
+shares through this contract, but does not prevent external hedging or sale of
+account control.
+
+OpenZeppelin's [VestingWallet](https://docs.openzeppelin.com/contracts/5.x/api/finance)
+implements scheduled beneficiary releases, while
+[Votes and TimelockController](https://docs.openzeppelin.com/contracts/5.x/api/governance)
+provide voting checkpoints and delayed transaction execution. None directly
+provides this per-lock unlock-request cooldown with RAILGUN proposal deadlines.
+The escrow uses a small custom state machine with OZ `SafeERC20`,
+`ReentrancyGuard`, and `Math`; the supply hook uses OZ `Checkpoints`.
 
 ### Deployment and trust boundaries
 
@@ -56,14 +82,15 @@ for later interval cutoffs. The hook has fixed callback settings and cannot mint
 shares. This deployment does not compose it with fee hooks or MetaHooks.
 
 `script/DeployStakedRailVoting.s.sol` reads `ST_RAIL`, `RAILGUN_VOTING`, and
-`MINIMUM_LOCK_DURATION` (seconds). It deploys, installs, and initializes the hook,
+`UNLOCK_COOLDOWN` (seconds). It deploys, installs, and initializes the hook,
 then deploys the immutable escrow and calls the manager's `setVotingKey`. Execute
 as a holder of both the strategy's `HOOKS_MANAGER_ROLE` and the manager's
 `DEFAULT_ADMIN_ROLE`, or perform installation and registration separately through
 governance. The script rejects an existing hook instead of replacing it. No
 deployment is performed automatically.
 
-Removing the hook blocks new locks and voting; expired locks remain withdrawable.
+Removing the hook blocks new locks and voting; unlock requests and matured
+withdrawals remain available.
 The vault does not notify hooks when they are removed: removal followed by
 reinstallation can leave undetectable gaps if supply returns to its recorded
 value. Governance must never reuse this history after detaching the hook. Deploy
