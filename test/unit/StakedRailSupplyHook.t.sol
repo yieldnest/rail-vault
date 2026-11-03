@@ -199,10 +199,9 @@ contract StakedRailSupplyHookTest is RailSystemFixture {
         );
     }
 
-    function testStateUsesERC7201Namespace() external {
+    function testStateUsesSequentialStorage() external {
         _install();
-        bytes32 slot = keccak256(abi.encode(uint256(keccak256("yieldnest.storage.StakedRailSupplyHook")) - 1))
-            & ~bytes32(uint256(0xff));
+        bytes32 slot = bytes32(0);
         assertEq(address(uint160(uint256(vm.load(address(hook), slot)))), address(d.strategy));
         assertEq(uint256(vm.load(address(hook), bytes32(uint256(slot) + 1))), hook.historyStartedAt());
         assertEq(uint256(vm.load(address(hook), bytes32(uint256(slot) + 2))), 1);

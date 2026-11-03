@@ -11,7 +11,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
  * @notice Total-supply history using the vault's existing hook callbacks.
  * @dev Supports direct installation or calls through the vault's configured hook (e.g. MetaHooks).
  * Run after any other hook that changes supply. Upgrade authority belongs to the proxy admin.
- * Checkpoint history is kept in ERC-7201 storage across implementation upgrades.
+ * Checkpoint history is kept in regular contract storage across compatible implementation upgrades.
  * Governance must never detach and reinstall this hook: the vault exposes no installation nonce
  * and an unobserved removal/reinstallation cannot be reliably detected onchain.
  */
@@ -20,22 +20,10 @@ contract StakedRailSupplyHook is IHooks, Initializable {
 
     //// STORAGE ////
 
-    /// @custom:storage-location erc7201:yieldnest.storage.StakedRailSupplyHook
-    struct SupplyHookStorage {
-        IVault vault;
-        uint256 historyStartedAt;
-        Checkpoints.Trace208 supplyHistory;
-    }
-
-    // keccak256(abi.encode(uint256(keccak256("yieldnest.storage.StakedRailSupplyHook")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant SUPPLY_HOOK_STORAGE_LOCATION =
-        0x84808c50bdfe2b7a8a025dd0af09b4fb0fb77bff5bb780fb1ca93017acf64400;
-
-    function _getSupplyHookStorage() internal pure returns (SupplyHookStorage storage $) {
-        assembly {
-            $.slot := SUPPLY_HOOK_STORAGE_LOCATION
-        }
-    }
+    // Preserve declaration order and types across upgrades; append new state after existing fields.
+    IVault public override VAULT;
+    uint256 public historyStartedAt;
+    Checkpoints.Trace208 private _supplyHistory;
 
     //// ERRORS ////
 
@@ -53,23 +41,13 @@ contract StakedRailSupplyHook is IHooks, Initializable {
     function initialize(IVault vault_) external initializer {
         if (address(vault_) == address(0)) revert InvalidVault();
 
-        _getSupplyHookStorage().vault = vault_;
-    }
-
-    //// GETTERS ////
-
-    function VAULT() public view returns (IVault) {
-        return _getSupplyHookStorage().vault;
-    }
-
-    function historyStartedAt() public view returns (uint256) {
-        return _getSupplyHookStorage().historyStartedAt;
+        VAULT = vault_;
     }
 
     //// MODIFIERS ////
 
     modifier onlyVaultOrHook() {
-        IVault vault = VAULT();
+        IVault vault = VAULT;
         if (msg.sender != address(vault) && msg.sender != address(vault.hooks())) revert CallerNotVault();
         _;
     }
@@ -94,9 +72,8 @@ contract StakedRailSupplyHook is IHooks, Initializable {
      * @notice Seed existing supply during setup. Later calls record current supply but cannot reconstruct missed history.
      */
     function checkpoint() external {
-        SupplyHookStorage storage $ = _getSupplyHookStorage();
-        if ($.historyStartedAt == 0) {
-            $.historyStartedAt = block.timestamp;
+        if (historyStartedAt == 0) {
+            historyStartedAt = block.timestamp;
         }
         _record();
     }
@@ -104,16 +81,14 @@ contract StakedRailSupplyHook is IHooks, Initializable {
     function totalSupplyBefore(uint256 timestamp) external view returns (uint256) {
         if (timestamp == 0 || timestamp > block.timestamp) revert InvalidSnapshotTime();
 
-        SupplyHookStorage storage $ = _getSupplyHookStorage();
-        if (timestamp <= $.historyStartedAt) return 0;
-        return $.supplyHistory.upperLookupRecent(SafeCast.toUint48(timestamp - 1));
+        if (timestamp <= historyStartedAt) return 0;
+        return _supplyHistory.upperLookupRecent(SafeCast.toUint48(timestamp - 1));
     }
 
     function _record() private {
-        SupplyHookStorage storage $ = _getSupplyHookStorage();
-        if ($.historyStartedAt == 0) revert HistoryNotStarted();
+        if (historyStartedAt == 0) revert HistoryNotStarted();
 
-        $.supplyHistory.push(SafeCast.toUint48(block.timestamp), SafeCast.toUint208($.vault.totalSupply()));
+        _supplyHistory.push(SafeCast.toUint48(block.timestamp), SafeCast.toUint208(VAULT.totalSupply()));
     }
 
     //// HOOK CALLBACKS ////

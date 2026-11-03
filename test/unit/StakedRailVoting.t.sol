@@ -201,9 +201,8 @@ contract StakedRailVotingTest is RailSystemFixture {
         escrow.initialize(d.strategy, IRailgunVoting(address(voting)), hook, 7 days);
     }
 
-    function testVotingStorageNamespace() external view {
-        bytes32 slot = keccak256(abi.encode(uint256(keccak256("yieldnest.storage.StakedRailVoting")) - 1))
-            & ~bytes32(uint256(0xff));
+    function testVotingStorageLayout() external view {
+        bytes32 slot = bytes32(0);
         assertEq(address(uint160(uint256(vm.load(address(escrow), slot)))), address(d.strategy));
         assertEq(uint256(vm.load(address(escrow), bytes32(uint256(slot) + 6))), 10_000 ether);
         assertEq(uint256(vm.load(address(escrow), bytes32(uint256(slot) + 7))), 2);
