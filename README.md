@@ -114,7 +114,7 @@ escrow's ProxyAdmin. It deploys and initializes the hook proxy, installs the hoo
 and seeds its history, then deploys and initializes the escrow proxy and calls
 the manager's `setVotingKey`. Execute
 as a holder of both the strategy's `HOOKS_MANAGER_ROLE` and the manager's
-`DEFAULT_ADMIN_ROLE`, or perform installation and registration separately through
+`VOTING_KEY_MANAGER_ROLE`, or perform installation and registration separately through
 governance. The script rejects an existing hook instead of replacing it. No
 deployment is performed automatically.
 
@@ -128,8 +128,10 @@ instead. A later checkpoint records current supply but cannot reconstruct missed
 history.
 
 There is no trusted price or tally input. Existing proxy administrators and vault
-configuration roles remain trusted; the manager administrator can replace or
-clear the voting key. The escrow ProxyAdmin owner is trusted
+configuration roles remain trusted; holders of the manager’s `VOTING_KEY_MANAGER_ROLE`
+can replace or clear the voting key. New system deployments grant this role to
+`ADMIN`; the manager’s default admin can grant or revoke it. Existing managers
+need an explicit role grant before calling `setVotingKey`. The escrow ProxyAdmin owner is trusted
 with custody and voting: it can replace the implementation and must preserve
 storage layout and voting semantics. The escrow has no separate runtime admin
 functions. Sponsorship and proposal creation remain external to this escrow.

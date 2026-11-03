@@ -10,7 +10,7 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 
 /**
- * @dev Caller needs manager DEFAULT_ADMIN_ROLE and strategy HOOKS_MANAGER_ROLE.
+ * @dev Caller needs manager VOTING_KEY_MANAGER_ROLE and strategy HOOKS_MANAGER_ROLE.
  */
 contract DeployStakedRailVoting is Script {
     //// DEPLOYMENT ////

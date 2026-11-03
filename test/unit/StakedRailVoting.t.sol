@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {MockHookRouter} from "../mocks/MockHookRouter.sol";
@@ -206,6 +207,32 @@ contract StakedRailVotingTest is RailSystemFixture {
         assertEq(address(uint160(uint256(vm.load(address(escrow), slot)))), address(d.strategy));
         assertEq(uint256(vm.load(address(escrow), bytes32(uint256(slot) + 6))), 10_000 ether);
         assertEq(uint256(vm.load(address(escrow), bytes32(uint256(slot) + 7))), 2);
+    }
+
+    function testVotingKeyManagerRoleCanBeDelegatedAndRevoked() external {
+        bytes32 role = d.manager.VOTING_KEY_MANAGER_ROLE();
+        assertTrue(d.manager.hasRole(role, address(this)));
+        assertEq(d.manager.getRoleAdmin(role), d.manager.DEFAULT_ADMIN_ROLE());
+
+        d.manager.revokeRole(role, address(this));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, address(this), role)
+        );
+        d.manager.setVotingKey(IRailgunVoting(address(voting)), address(0));
+
+        d.manager.grantRole(role, alice);
+        assertFalse(d.manager.hasRole(d.manager.DEFAULT_ADMIN_ROLE(), alice));
+        vm.startPrank(alice);
+        d.manager.setVotingKey(IRailgunVoting(address(voting)), bob);
+        assertEq(voting.votingKey(address(d.manager)), bob);
+        d.manager.setVotingKey(IRailgunVoting(address(voting)), address(0));
+        assertEq(voting.votingKey(address(d.manager)), address(0));
+        vm.stopPrank();
+
+        d.manager.revokeRole(role, alice);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, role));
+        d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));
     }
 
     function testOnlyLockOwnerCanVoteOrWithdraw() external {
