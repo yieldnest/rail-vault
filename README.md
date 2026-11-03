@@ -3,7 +3,142 @@
 Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 `stRAIL_YieldNest_Spec.md`.
 
-## Layout
+## stRAIL governance locks
+
+`StakedRailVoting` holds non-transferable lock positions denominated in stRAIL
+shares. Users approve the contract and call `lock(shares)`. Shares stay locked
+indefinitely until the owner calls `requestUnlock(lockId)`. Each deposit creates
+a separate lock. There are no transferable receipts, top-ups that inherit an old
+timestamp, early withdrawals, administrator withdrawals, or arbitrary execution
+methods.
+
+For a RAILGUN proposal, a lock must exist **strictly before the start of its
+staking snapshot interval** and have no pending unlock request.
+Locking after a proposal's cutoff does not grant voting rights for that proposal.
+The contract obtains the proposal and manager voting power directly from RAILGUN.
+`StakedRailSupplyHook` records total supply through YieldNest deposit, mint,
+withdraw, redeem, and accounting callbacks. Later deposits and exits cannot
+change the historical allocation denominator. The strategy itself contains no
+governance checkpoint logic.
+
+The cumulative voting entitlement of a lock is the smaller of:
+
+```text
+floor(locked shares × manager's snapshot voting power / stRAIL supply before cutoff)
+current stRAIL.convertToAssets(locked shares)
+```
+
+Amounts are RAIL base units. This uses active historical backing per share rather
+than assigning votes to idle RAIL or qRAIL. All outstanding shares are included
+in the denominator; nonparticipants' votes are not redistributed. Donations
+cannot increase a lock above its historical allocation. A lower current value
+can reduce unused entitlement, but votes already sent upstream cannot be undone.
+
+The owner calls `vote(lockId, proposalId, railAmount, affirmative, snapshotHint)`.
+Votes forward immediately as the manager's registered voting key. A lock can
+split its allocation between YES and NO and use its allocation independently on
+multiple proposals. There is no choice-changing or revocation mechanism. The
+contract enforces RAILGUN's opening, YES deadline, and NO-only veto deadline.
+`votingPower` returns the cumulative cap; subtract `votesUsed` for available
+power (clamped to zero if valuation has fallen).
+
+`requestUnlock(lockId)` immediately stops further voting for that lock, without
+revoking votes already cast. It sets the withdrawal time to:
+
+```text
+unlock request time + unlockCooldown
+```
+
+The cooldown is set at initialization and has no configuration setter. Requests cannot be
+cancelled or restarted, and time spent locked before requesting does not count
+toward the cooldown. Even a vote at the end of a voting window is followed by a
+full cooldown if the user requests an unlock immediately afterward. Withdrawal
+does not wait for voting to close or for proposal execution. A short configured
+cooldown can therefore allow withdrawal while a previously voted proposal remains open.
+
+At that time, `withdraw(lockId)` returns the same number of stRAIL shares to their
+owner. Unlock requests and withdrawals work independently of the supply hook or
+upstream voting permissions. To vote again after requesting an unlock, withdraw
+and create a fresh lock, eligible only for subsequent snapshot cutoffs. Shares
+retain vault exposure while locked. The lock prevents selling or redeeming those
+shares through this contract, but does not prevent external hedging or sale of
+account control.
+
+OpenZeppelin's [VestingWallet](https://docs.openzeppelin.com/contracts/5.x/api/finance)
+implements scheduled beneficiary releases, while
+[Votes and TimelockController](https://docs.openzeppelin.com/contracts/5.x/api/governance)
+provide voting checkpoints and delayed transaction execution. None directly
+provides this per-lock unlock-request cooldown.
+The escrow uses a small custom state machine with OZ `SafeERC20`,
+`ReentrancyGuardUpgradeable`, and `Math`; the supply hook uses OZ `Checkpoints`.
+
+### Deployment and trust boundaries
+
+`StakedRailSupplyHook` runs behind an OpenZeppelin transparent proxy. The vault
+address, history start timestamp, and checkpoint array use regular contract storage. Deploy the proxy with an atomic
+`initialize(vault)` call; the implementation disables initialization. Upgrading
+through its `ProxyAdmin` keeps the same hook address and checkpoint storage, so
+neither the voting escrow nor MetaHooks needs a new address. Future implementations
+must preserve declaration order and field types, appending new state after existing fields. The ProxyAdmin owner is trusted to
+choose implementations that preserve the history and its meaning.
+
+`StakedRailVoting` also runs behind a transparent proxy, initialized atomically
+with the strategy, native voting contract, supply hook, and cooldown. Its
+regular contract storage holds dependencies,
+locks, total locked shares, and per-proposal vote usage. Compatible upgrades
+preserve custody, withdrawal deadlines, spent voting allowances, and the manager's
+registered voting-key address. Its implementation disables initialization.
+
+Both contracts must be deployed with proxies from the start. Existing directly
+deployed contracts cannot be converted into proxies in place. This sequential storage
+layout is also incompatible with earlier ERC-7201 implementations of the hook and
+escrow; existing proxies using those implementations require an explicit migration.
+Removing the former `lastVoteEnd` field also changes the lock array element layout;
+proxies with the earlier lock layout require migration before using this version.
+OpenZeppelin initializer and reentrancy-guard dependencies retain their own
+namespaced storage.
+
+The position manager must expose `setVotingKey`; no governance changes to the
+strategy implementation are required. Install `StakedRailSupplyHook` directly or
+include it in MetaHooks, then call its `checkpoint()` during setup to start
+history before deploying the escrow. Pass the supply hook explicitly to the
+escrow initializer. Earlier history cannot be reconstructed. Locks become eligible only
+for later interval cutoffs. The hook has fixed callback settings and cannot mint
+shares. With MetaHooks, place it after all hooks that mint or burn shares so it
+records the final supply. Callbacks accept the vault or its configured hook;
+initialization does not require direct installation. The deployment script still
+installs the hook directly.
+
+`script/DeployStakedRailVoting.s.sol` reads `ST_RAIL`, `RAILGUN_VOTING`,
+`UNLOCK_COOLDOWN` (seconds), and `HOOK_PROXY_ADMIN_OWNER` (the governance address
+that owns the hook's ProxyAdmin), plus `VOTING_PROXY_ADMIN_OWNER` for the
+escrow's ProxyAdmin. It deploys and initializes the hook proxy, installs the hook,
+and seeds its history, then deploys and initializes the escrow proxy and calls
+the manager's `setVotingKey`. Execute
+as a holder of both the strategy's `HOOKS_MANAGER_ROLE` and the manager's
+`VOTING_KEY_MANAGER_ROLE`, or perform installation and registration separately through
+governance. The script rejects an existing hook instead of replacing it. No
+deployment is performed automatically.
+
+Removing the hook does not block locks or voting. Historical supply reads do not
+check whether the hook remains installed or matches current supply.
+The vault does not notify hooks when they are removed: removal followed by
+reinstallation can leave undetectable gaps if supply returns to its recorded
+value. Governance must never reuse this history after detaching the hook. Deploy
+a new hook and escrow, initialize fresh history, and register the new voting key
+instead. A later checkpoint records current supply but cannot reconstruct missed
+history.
+
+There is no trusted price or tally input. Existing proxy administrators and vault
+configuration roles remain trusted; holders of the manager’s `VOTING_KEY_MANAGER_ROLE`
+can replace or clear the voting key. New system deployments grant this role to
+`ADMIN`; the manager’s default admin can grant or revoke it. Existing managers
+need an explicit role grant before calling `setVotingKey`. The escrow ProxyAdmin owner is trusted
+with custody and voting: it can replace the implementation and must preserve
+storage layout and voting semantics. The escrow has no separate runtime admin
+functions. Sponsorship and proposal creation remain external to this escrow.
+
+## Contract layout
 
 - `lib/yieldnest-vault`: YieldNest vault submodule.
 - `lib/yieldnest-vault-withdrawals`: YieldNest withdrawal request, Bag, factory, policy, and withdrawer interfaces.
@@ -103,6 +238,11 @@ stRAIL, qRAIL, the position manager, aRAIL/uRAIL receipts, both providers, withd
 requests, the withdrawer, FIFO resolver and bag factory.
 Each TUP has its own ProxyAdmin, initially owned by `ADMIN`. Initializers
 run atomically during proxy creation and implementation initializers are disabled.
+The separately deployed governance supply hook also uses a TUP, with its
+ProxyAdmin owned by `HOOK_PROXY_ADMIN_OWNER`. Its storage preserves
+checkpoint history across compatible implementation upgrades. The voting escrow
+uses a separate TUP owned through `VOTING_PROXY_ADMIN_OWNER`, preserving locks
+and vote usage in regular contract storage.
 
 Withdrawal bags retain the existing `BeaconProxyFactory` architecture: the factory
 itself is a TUP, while bags are beacon proxies sharing a factory-owned beacon.
