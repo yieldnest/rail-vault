@@ -28,6 +28,10 @@ contract StakedRailStrategy is BaseStrategy, LinearWithdrawalFee {
         uint256 principal = positionManager.queuePosition();
         IERC20 unlockedRail = IERC20(address(positionManager.unlockedRail()));
         unlockedRail.forceApprove(address(queuedRail), principal);
+        // Depositing before rewards are credited and exiting afterward can capture rewards
+        // earned by earlier holders.
+        // RAIL redemption can be immediate if liquidity is available and earlier FIFO requests
+        // are satisfied. Withdrawal fees still apply.
         shares = queuedRail.depositAsset(address(unlockedRail), principal, address(this));
         if (shares == 0) revert ZeroQueuedShares();
     }
