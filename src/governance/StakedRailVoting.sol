@@ -79,6 +79,9 @@ contract StakedRailVoting is ReentrancyGuard {
 
     /// @notice Stop voting and start the withdrawal cooldown. Requests cannot be cancelled or restarted.
     /// @dev Shares also remain held through the latest final NO-vote deadline this lock voted on.
+    /// Native RAILGUN voting uses historical snapshots, so unstaking does not itself remove eligibility
+    /// for an already-snapshotted proposal. This escrow deliberately blocks further votes immediately
+    /// when unlock is requested; votes already cast remain in effect.
     function requestUnlock(uint256 id) external nonReentrant {
         Lock storage position = locks[id];
         if (msg.sender != position.owner) revert NotOwner();
