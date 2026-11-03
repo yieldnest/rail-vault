@@ -75,23 +75,26 @@ The escrow uses a small custom state machine with OZ `SafeERC20`,
 ### Deployment and trust boundaries
 
 `StakedRailSupplyHook` runs behind an OpenZeppelin transparent proxy. The vault
-address, history start timestamp, and checkpoint array use the ERC-7201 namespace
-`yieldnest.storage.StakedRailSupplyHook`. Deploy the proxy with an atomic
+address, history start timestamp, and checkpoint array use regular contract storage. Deploy the proxy with an atomic
 `initialize(vault)` call; the implementation disables initialization. Upgrading
 through its `ProxyAdmin` keeps the same hook address and checkpoint storage, so
 neither the voting escrow nor MetaHooks needs a new address. Future implementations
-must preserve the namespace and field layout. The ProxyAdmin owner is trusted to
+must preserve declaration order and field types, appending new state after existing fields. The ProxyAdmin owner is trusted to
 choose implementations that preserve the history and its meaning.
 
 `StakedRailVoting` also runs behind a transparent proxy, initialized atomically
 with the strategy, native voting contract, supply hook, and cooldown. Its
-ERC-7201 namespace `yieldnest.storage.StakedRailVoting` holds dependencies,
+regular contract storage holds dependencies,
 locks, total locked shares, and per-proposal vote usage. Compatible upgrades
 preserve custody, withdrawal deadlines, spent voting allowances, and the manager's
 registered voting-key address. Its implementation disables initialization.
 
 Both contracts must be deployed with proxies from the start. Existing directly
-deployed contracts cannot be converted into proxies in place.
+deployed contracts cannot be converted into proxies in place. This sequential storage
+layout is also incompatible with earlier ERC-7201 implementations of the hook and
+escrow; existing proxies using those implementations require an explicit migration.
+OpenZeppelin initializer and reentrancy-guard dependencies retain their own
+namespaced storage.
 
 The position manager must expose `setVotingKey`; no governance changes to the
 strategy implementation are required. Install `StakedRailSupplyHook` directly or
@@ -232,10 +235,10 @@ requests, the withdrawer, FIFO resolver and bag factory.
 Each TUP has its own ProxyAdmin, initially owned by `ADMIN`. Initializers
 run atomically during proxy creation and implementation initializers are disabled.
 The separately deployed governance supply hook also uses a TUP, with its
-ProxyAdmin owned by `HOOK_PROXY_ADMIN_OWNER`. Its ERC-7201 storage preserves
+ProxyAdmin owned by `HOOK_PROXY_ADMIN_OWNER`. Its storage preserves
 checkpoint history across compatible implementation upgrades. The voting escrow
 uses a separate TUP owned through `VOTING_PROXY_ADMIN_OWNER`, preserving locks
-and vote usage in its own ERC-7201 namespace.
+and vote usage in regular contract storage.
 
 Withdrawal bags retain the existing `BeaconProxyFactory` architecture: the factory
 itself is a TUP, while bags are beacon proxies sharing a factory-owned beacon.
