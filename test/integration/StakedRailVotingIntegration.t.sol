@@ -10,6 +10,7 @@ import {IRailgunVoting, IRailgunVotingSnapshots} from "../../src/railgun/IRailgu
 import {IRailgunStaking} from "../../src/railgun/IRailgunStaking.sol";
 
 import {StakedRailSupplyHook} from "../../src/governance/StakedRailSupplyHook.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 
 interface IRailgunProposalCreation {
@@ -44,7 +45,15 @@ contract StakedRailVotingIntegrationTest is Test {
             })
         );
         RailStrategyDeployer.Deployed memory d = deployer.deploy();
-        StakedRailSupplyHook hook = new StakedRailSupplyHook(IVault(address(d.strategy)));
+        StakedRailSupplyHook hook = StakedRailSupplyHook(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new StakedRailSupplyHook()),
+                    address(this),
+                    abi.encodeCall(StakedRailSupplyHook.initialize, (IVault(address(d.strategy))))
+                )
+            )
+        );
         d.strategy.grantRole(d.strategy.HOOKS_MANAGER_ROLE(), address(this));
         d.strategy.setHooks(address(hook));
         hook.checkpoint();

@@ -74,6 +74,18 @@ The escrow uses a small custom state machine with OZ `SafeERC20`,
 
 ### Deployment and trust boundaries
 
+`StakedRailSupplyHook` runs behind an OpenZeppelin transparent proxy. The vault
+address, history start timestamp, and checkpoint array use the ERC-7201 namespace
+`yieldnest.storage.StakedRailSupplyHook`. Deploy the proxy with an atomic
+`initialize(vault)` call; the implementation disables initialization. Upgrading
+through its `ProxyAdmin` keeps the same hook address and checkpoint storage, so
+neither the voting escrow nor MetaHooks needs a new address. Future implementations
+must preserve the namespace and field layout. The ProxyAdmin owner is trusted to
+choose implementations that preserve the history and its meaning.
+
+This applies to hooks deployed with the proxy from the start. An existing directly
+deployed, non-upgradeable hook cannot be converted into this proxy in place.
+
 The position manager must expose `setVotingKey`; no governance changes to the
 strategy implementation are required. Install `StakedRailSupplyHook` directly or
 include it in MetaHooks, then call its `checkpoint()` during setup to start
@@ -85,8 +97,10 @@ records the final supply. Callbacks accept the vault or its configured hook;
 initialization does not require direct installation. The deployment script still
 installs the hook directly.
 
-`script/DeployStakedRailVoting.s.sol` reads `ST_RAIL`, `RAILGUN_VOTING`, and
-`UNLOCK_COOLDOWN` (seconds). It deploys, installs, and initializes the hook,
+`script/DeployStakedRailVoting.s.sol` reads `ST_RAIL`, `RAILGUN_VOTING`,
+`UNLOCK_COOLDOWN` (seconds), and `HOOK_PROXY_ADMIN_OWNER` (the governance address
+that owns the hook's ProxyAdmin). It deploys the implementation and initialized
+proxy, installs the hook, and seeds its history,
 then deploys the immutable escrow and calls the manager's `setVotingKey`. Execute
 as a holder of both the strategy's `HOOKS_MANAGER_ROLE` and the manager's
 `DEFAULT_ADMIN_ROLE`, or perform installation and registration separately through
@@ -209,6 +223,9 @@ stRAIL, qRAIL, the position manager, aRAIL/uRAIL receipts, both providers, withd
 requests, the withdrawer, FIFO resolver and bag factory.
 Each TUP has its own ProxyAdmin, initially owned by `ADMIN`. Initializers
 run atomically during proxy creation and implementation initializers are disabled.
+The separately deployed governance supply hook also uses a TUP, with its
+ProxyAdmin owned by `HOOK_PROXY_ADMIN_OWNER`. Its ERC-7201 storage preserves
+checkpoint history across compatible implementation upgrades.
 
 Withdrawal bags retain the existing `BeaconProxyFactory` architecture: the factory
 itself is a TUP, while bags are beacon proxies sharing a factory-owned beacon.
