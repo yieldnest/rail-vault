@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {MockHookRouter} from "../mocks/MockHookRouter.sol";
 import {RailSystemFixture} from "../utils/RailSystemFixture.sol";
 import {StakedRailSupplyHook} from "../../src/governance/StakedRailSupplyHook.sol";
 import {IHooks} from "@yieldnest-vault/interface/IHooks.sol";
@@ -36,6 +37,23 @@ contract StakedRailSupplyHookTest is RailSystemFixture {
 
     function testRecordsDepositMintRedeemAndWithdrawPaths() external {
         _install();
+        _exerciseSupplyChanges();
+    }
+
+    function testRecordsSupplyThroughConfiguredHookRouter() external {
+        MockHookRouter router = new MockHookRouter(IVault(address(d.strategy)), hook);
+        // Setup can seed history before the router is installed.
+        hook.checkpoint();
+        d.strategy.setHooks(address(router));
+        _exerciseSupplyChanges();
+        d.strategy.setHooks(address(0));
+        IHooks.DepositParams memory params;
+        vm.prank(address(router));
+        vm.expectRevert(IHooks.CallerNotVault.selector);
+        hook.afterDeposit(params);
+    }
+
+    function _exerciseSupplyChanges() internal {
         _bootstrapSystem();
         vm.warp(block.timestamp + 1);
         uint256 first = block.timestamp;
@@ -58,15 +76,13 @@ contract StakedRailSupplyHookTest is RailSystemFixture {
         assertEq(hook.totalSupplyBefore(first), 8000 ether);
         assertEq(hook.totalSupplyBefore(second), 10_000 ether);
         d.strategy.processAccounting();
-        hook.assertActive();
+        vm.warp(block.timestamp + 1);
+        assertEq(hook.totalSupplyBefore(block.timestamp), d.strategy.totalSupply());
     }
 
-    function testUninitializedHookCannotBeUsedOrInitializedBeforeAttachment() external {
-        vm.expectRevert(StakedRailSupplyHook.InactiveHook.selector);
-        hook.checkpoint();
+    function testUninitializedHookCannotRecordSupply() external {
         d.strategy.setHooks(address(hook));
-        vm.expectRevert(StakedRailSupplyHook.HistoryNotStarted.selector);
-        hook.totalSupplyBefore(block.timestamp);
+        assertEq(hook.totalSupplyBefore(block.timestamp), 0);
         rail.mint(alice, 1000 ether);
         vm.startPrank(alice);
         rail.approve(address(d.strategy), 1000 ether);
@@ -76,7 +92,8 @@ contract StakedRailSupplyHookTest is RailSystemFixture {
         hook.checkpoint();
         vm.prank(alice);
         d.strategy.deposit(1000 ether, alice);
-        hook.assertActive();
+        vm.warp(block.timestamp + 1);
+        assertEq(hook.totalSupplyBefore(block.timestamp), d.strategy.totalSupply());
     }
 
     function testCallbacksCannotBeForgedAndConfigurationCannotBeDisabled() external {
@@ -91,19 +108,21 @@ contract StakedRailSupplyHookTest is RailSystemFixture {
         d.strategy.mintShares(alice, 1000 ether);
     }
 
-    function testDetachedOrMismatchedHistoryCannotBeReadOrRepaired() external {
+    function testDetachedHistoryRemainsReadableAndCheckpointDoesNotReconstructGap() external {
         _install();
         _deposit(alice, 1000 ether);
         vm.warp(block.timestamp + 1);
         d.strategy.setHooks(address(0));
-        vm.expectRevert(StakedRailSupplyHook.InactiveHook.selector);
-        hook.totalSupplyBefore(block.timestamp);
         _deposit(alice, 1000 ether);
+        vm.warp(block.timestamp + 1);
+        uint256 gap = block.timestamp;
+        assertEq(hook.totalSupplyBefore(gap), 1000 ether);
+        assertEq(d.strategy.totalSupply(), 2000 ether);
         d.strategy.setHooks(address(hook));
-        vm.expectRevert(StakedRailSupplyHook.IncompleteHistory.selector);
         hook.checkpoint();
-        vm.expectRevert(StakedRailSupplyHook.IncompleteHistory.selector);
-        hook.totalSupplyBefore(block.timestamp);
+        vm.warp(block.timestamp + 1);
+        assertEq(hook.totalSupplyBefore(block.timestamp), 2000 ether);
+        assertEq(hook.totalSupplyBefore(gap), 1000 ether);
     }
 
     function testFuzzRecordedSupplyMatchesActualSupply(uint256 depositAmount, uint256 mintShares) external {

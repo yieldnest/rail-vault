@@ -19,7 +19,7 @@ contract DeployStakedRailVoting is Script {
         StakedRailSupplyHook hook = new StakedRailSupplyHook(IVault(address(strategy)));
         strategy.setHooks(address(hook));
         hook.checkpoint();
-        escrow = new StakedRailVoting(strategy, voting, cooldown);
+        escrow = new StakedRailVoting(strategy, voting, hook, cooldown);
         strategy.positionManager().setVotingKey(voting, address(escrow));
         vm.stopBroadcast();
     }

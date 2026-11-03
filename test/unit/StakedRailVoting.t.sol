@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {MockHookRouter} from "../mocks/MockHookRouter.sol";
 import {RailSystemFixture} from "../utils/RailSystemFixture.sol";
 import {MockRailgunVoting} from "../mocks/MockRailgunVoting.sol";
 import {StakedRailVoting} from "../../src/governance/StakedRailVoting.sol";
@@ -24,10 +25,10 @@ contract StakedRailVotingTest is RailSystemFixture {
         _deploySystem();
         hook = new StakedRailSupplyHook(IVault(address(d.strategy)));
         d.strategy.grantRole(d.strategy.HOOKS_MANAGER_ROLE(), address(this));
-        d.strategy.setHooks(address(hook));
+        d.strategy.setHooks(address(new MockHookRouter(IVault(address(d.strategy)), hook)));
         hook.checkpoint();
         voting = new MockRailgunVoting(address(staking));
-        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), 7 days);
+        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), hook, 7 days);
         d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));
         _deposit(alice, 3000 ether);
         _deposit(bob, 7000 ether);
@@ -93,12 +94,12 @@ contract StakedRailVotingTest is RailSystemFixture {
         escrow.requestUnlock(aliceLock);
     }
 
-    function testRemovingHookBlocksVotingAndNewLocksButNotUnlockRequestsOrWithdrawals() external {
+    function testRemovingHookDoesNotBlockVotingLocksOrExits() external {
+        _deposit(alice, 1);
         d.strategy.setHooks(address(0));
         vm.startPrank(alice);
-        vm.expectRevert(StakedRailSupplyHook.InactiveHook.selector);
         escrow.vote(aliceLock, 1, 1, true, 0);
-        vm.expectRevert(StakedRailSupplyHook.InactiveHook.selector);
+        d.strategy.approve(address(escrow), 1);
         escrow.lock(1);
         escrow.requestUnlock(aliceLock);
         vm.warp(block.timestamp + 7 days);
@@ -200,10 +201,10 @@ contract StakedRailVotingTest is RailSystemFixture {
         _deploySystem();
         hook = new StakedRailSupplyHook(IVault(address(d.strategy)));
         d.strategy.grantRole(d.strategy.HOOKS_MANAGER_ROLE(), address(this));
-        d.strategy.setHooks(address(hook));
+        d.strategy.setHooks(address(new MockHookRouter(IVault(address(d.strategy)), hook)));
         hook.checkpoint();
         voting = new MockRailgunVoting(address(staking));
-        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), 7 days);
+        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), hook, 7 days);
         d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));
         _deposit(alice, 1000 ether);
         rail.mint(address(d.strategy), 1000 ether);
@@ -270,7 +271,7 @@ contract StakedRailVotingTest is RailSystemFixture {
         vm.expectRevert(StakedRailVoting.InvalidLock.selector);
         escrow.lock(0);
         vm.expectRevert(StakedRailVoting.InvalidConfiguration.selector);
-        new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), 0);
+        new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), hook, 0);
         MockRailgunVoting wrong = new MockRailgunVoting(address(0xBEEF));
         vm.expectRevert();
         d.manager.setVotingKey(IRailgunVoting(address(wrong)), address(escrow));
@@ -321,7 +322,7 @@ contract StakedRailVotingTest is RailSystemFixture {
 
     function testFuzzUnlockWaitsForBothCooldownAndLatestVotedDeadline(uint256 cooldown) external {
         cooldown = bound(cooldown, 1, 30 days);
-        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), cooldown);
+        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), hook, cooldown);
         d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));
         _deposit(alice, 100 ether);
         uint256 id = _lock(alice, 100 ether);
