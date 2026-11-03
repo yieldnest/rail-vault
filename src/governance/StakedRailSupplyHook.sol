@@ -24,7 +24,7 @@ contract StakedRailSupplyHook is IHooks {
     error ImmutableConfig();
 
     constructor(IVault vault_) {
-        if (address(vault_).code.length == 0) revert InvalidVault();
+        if (address(vault_) == address(0)) revert InvalidVault();
         VAULT = vault_;
     }
 
