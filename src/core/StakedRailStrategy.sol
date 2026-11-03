@@ -23,6 +23,8 @@ contract StakedRailStrategy is BaseStrategy, LinearWithdrawalFee {
     error OnlyProcessorSelfCall();
     error ZeroQueuedShares();
 
+    // NOTE: Small exits still unlock a whole position. Surplus qRAIL remains owned by stRAIL
+    // and serves later exits, but earns no staking yield and is not automatically restaked.
     function queuePosition() external returns (uint256 shares) {
         if (msg.sender != address(this)) revert OnlyProcessorSelfCall();
         uint256 principal = positionManager.queuePosition();
