@@ -33,6 +33,8 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
     IRailgunVoting public voting;
     IRailgunVotingSnapshots public snapshots;
     StakedRailSupplyHook public supplyHook;
+    // RAILGUN's active voting window is 4 days. A shorter cooldown can let a voter
+    // request an unlock and withdraw their shares before voting ends.
     uint256 public unlockCooldown;
     uint256 public totalLocked;
     Lock[] public locks;
