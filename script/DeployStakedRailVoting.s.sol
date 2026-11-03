@@ -17,6 +17,7 @@ contract DeployStakedRailVoting is Script {
         uint256 cooldown = vm.envUint("UNLOCK_COOLDOWN");
         require(address(strategy.hooks()) == address(0), "existing hooks require explicit migration");
         address proxyAdminOwner = vm.envAddress("HOOK_PROXY_ADMIN_OWNER");
+        address votingProxyAdminOwner = vm.envAddress("VOTING_PROXY_ADMIN_OWNER");
         vm.startBroadcast();
         StakedRailSupplyHook hook = StakedRailSupplyHook(
             address(
@@ -29,7 +30,15 @@ contract DeployStakedRailVoting is Script {
         );
         strategy.setHooks(address(hook));
         hook.checkpoint();
-        escrow = new StakedRailVoting(strategy, voting, hook, cooldown);
+        escrow = StakedRailVoting(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new StakedRailVoting()),
+                    votingProxyAdminOwner,
+                    abi.encodeCall(StakedRailVoting.initialize, (strategy, voting, hook, cooldown))
+                )
+            )
+        );
         strategy.positionManager().setVotingKey(voting, address(escrow));
         vm.stopBroadcast();
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {MockHookRouter} from "../mocks/MockHookRouter.sol";
@@ -39,7 +40,17 @@ contract StakedRailVotingTest is RailSystemFixture {
         d.strategy.setHooks(address(new MockHookRouter(IVault(address(d.strategy)), hook)));
         hook.checkpoint();
         voting = new MockRailgunVoting(address(staking));
-        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), hook, 7 days);
+        escrow = StakedRailVoting(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new StakedRailVoting()),
+                    address(this),
+                    abi.encodeCall(
+                        StakedRailVoting.initialize, (d.strategy, IRailgunVoting(address(voting)), hook, 7 days)
+                    )
+                )
+            )
+        );
         d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));
         _deposit(alice, 3000 ether);
         _deposit(bob, 7000 ether);
@@ -115,6 +126,87 @@ contract StakedRailVotingTest is RailSystemFixture {
         vm.expectRevert(StakedRailVoting.InsufficientVotingPower.selector);
         escrow.vote(aliceLock, 1, 1, true, 0);
         vm.stopPrank();
+    }
+
+    function _escrowAdmin() internal view returns (ProxyAdmin) {
+        bytes32 slot = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
+        return ProxyAdmin(address(uint160(uint256(vm.load(address(escrow), slot)))));
+    }
+
+    function _lockHash(uint256 id) internal view returns (bytes32) {
+        (address owner, uint256 shares, uint256 created, uint256 unlock, uint256 end, bool withdrawn) = escrow.locks(id);
+        return keccak256(abi.encode(owner, shares, created, unlock, end, withdrawn));
+    }
+
+    function testUpgradePreservesLocksVotesAndWithdrawals() external {
+        vm.prank(alice);
+        escrow.vote(aliceLock, 1, 1000 ether, true, 0);
+        vm.prank(bob);
+        escrow.requestUnlock(bobLock);
+        bytes32 aliceBefore = _lockHash(aliceLock);
+        bytes32 bobBefore = _lockHash(bobLock);
+        (,,, uint256 deadline,,) = escrow.locks(bobLock);
+
+        _escrowAdmin()
+            .upgradeAndCall(ITransparentUpgradeableProxy(address(escrow)), address(new StakedRailVotingV2()), "");
+        assertEq(StakedRailVotingV2(address(escrow)).version(), 2);
+        assertEq(_lockHash(aliceLock), aliceBefore);
+        assertEq(_lockHash(bobLock), bobBefore);
+        assertEq(address(escrow.stRail()), address(d.strategy));
+        assertEq(address(escrow.positionManager()), address(d.manager));
+        assertEq(address(escrow.voting()), address(voting));
+        assertEq(address(escrow.snapshots()), address(staking));
+        assertEq(address(escrow.supplyHook()), address(hook));
+        assertEq(escrow.unlockCooldown(), 7 days);
+        assertEq(escrow.totalLocked(), 10_000 ether);
+        assertEq(d.strategy.balanceOf(address(escrow)), 10_000 ether);
+        assertEq(escrow.votesUsed(1, aliceLock), 1000 ether);
+        assertEq(escrow.votingPower(bobLock, 1, 0), 0);
+
+        vm.startPrank(alice);
+        escrow.vote(aliceLock, 1, 2000 ether, false, 0);
+        vm.expectRevert(StakedRailVoting.InsufficientVotingPower.selector);
+        escrow.vote(aliceLock, 1, 1, true, 0);
+        vm.stopPrank();
+        assertEq(voting.getVotes(1, address(d.manager)), 3000 ether);
+
+        vm.warp(deadline);
+        vm.startPrank(bob);
+        escrow.withdraw(bobLock);
+        vm.expectRevert(StakedRailVoting.InvalidLock.selector);
+        escrow.withdraw(bobLock);
+        vm.stopPrank();
+        assertEq(escrow.totalLocked(), 3000 ether);
+        assertEq(d.strategy.balanceOf(bob), 7000 ether);
+        uint256 fresh = _lock(bob, 7000 ether);
+        assertEq(fresh, 2);
+        assertEq(escrow.votingPower(fresh, 1, 0), 0);
+        assertEq(escrow.totalLocked(), 10_000 ether);
+    }
+
+    function testOnlyProxyOwnerCanUpgrade() external {
+        ProxyAdmin admin = _escrowAdmin();
+        address implementation = address(new StakedRailVotingV2());
+        assertEq(admin.owner(), address(this));
+        vm.prank(alice);
+        vm.expectRevert();
+        admin.upgradeAndCall(ITransparentUpgradeableProxy(address(escrow)), implementation, "");
+    }
+
+    function testImplementationAndProxyCannotReinitialize() external {
+        StakedRailVoting implementation = new StakedRailVoting();
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        implementation.initialize(d.strategy, IRailgunVoting(address(voting)), hook, 7 days);
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        escrow.initialize(d.strategy, IRailgunVoting(address(voting)), hook, 7 days);
+    }
+
+    function testVotingStorageNamespace() external view {
+        bytes32 slot = keccak256(abi.encode(uint256(keccak256("yieldnest.storage.StakedRailVoting")) - 1))
+            & ~bytes32(uint256(0xff));
+        assertEq(address(uint160(uint256(vm.load(address(escrow), slot)))), address(d.strategy));
+        assertEq(uint256(vm.load(address(escrow), bytes32(uint256(slot) + 6))), 10_000 ether);
+        assertEq(uint256(vm.load(address(escrow), bytes32(uint256(slot) + 7))), 2);
     }
 
     function testOnlyLockOwnerCanVoteOrWithdraw() external {
@@ -244,7 +336,17 @@ contract StakedRailVotingTest is RailSystemFixture {
         d.strategy.setHooks(address(new MockHookRouter(IVault(address(d.strategy)), hook)));
         hook.checkpoint();
         voting = new MockRailgunVoting(address(staking));
-        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), hook, 7 days);
+        escrow = StakedRailVoting(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new StakedRailVoting()),
+                    address(this),
+                    abi.encodeCall(
+                        StakedRailVoting.initialize, (d.strategy, IRailgunVoting(address(voting)), hook, 7 days)
+                    )
+                )
+            )
+        );
         d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));
         _deposit(alice, 1000 ether);
         rail.mint(address(d.strategy), 1000 ether);
@@ -310,8 +412,17 @@ contract StakedRailVotingTest is RailSystemFixture {
     function testInvalidLocksAndConfiguration() external {
         vm.expectRevert(StakedRailVoting.InvalidLock.selector);
         escrow.lock(0);
+        StakedRailVoting implementation = new StakedRailVoting();
         vm.expectRevert(StakedRailVoting.InvalidConfiguration.selector);
-        new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), hook, 0);
+        StakedRailVoting(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(implementation),
+                    address(this),
+                    abi.encodeCall(StakedRailVoting.initialize, (d.strategy, IRailgunVoting(address(voting)), hook, 0))
+                )
+            )
+        );
         MockRailgunVoting wrong = new MockRailgunVoting(address(0xBEEF));
         vm.expectRevert();
         d.manager.setVotingKey(IRailgunVoting(address(wrong)), address(escrow));
@@ -362,7 +473,17 @@ contract StakedRailVotingTest is RailSystemFixture {
 
     function testFuzzUnlockWaitsForBothCooldownAndLatestVotedDeadline(uint256 cooldown) external {
         cooldown = bound(cooldown, 1, 30 days);
-        escrow = new StakedRailVoting(d.strategy, IRailgunVoting(address(voting)), hook, cooldown);
+        escrow = StakedRailVoting(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new StakedRailVoting()),
+                    address(this),
+                    abi.encodeCall(
+                        StakedRailVoting.initialize, (d.strategy, IRailgunVoting(address(voting)), hook, cooldown)
+                    )
+                )
+            )
+        );
         d.manager.setVotingKey(IRailgunVoting(address(voting)), address(escrow));
         _deposit(alice, 100 ether);
         uint256 id = _lock(alice, 100 ether);
@@ -402,5 +523,11 @@ contract StakedRailVotingTest is RailSystemFixture {
         vm.expectRevert(StakedRailVoting.InsufficientVotingPower.selector);
         escrow.vote(aliceLock, 1, 1, false, 0);
         vm.stopPrank();
+    }
+}
+
+contract StakedRailVotingV2 is StakedRailVoting {
+    function version() external pure returns (uint256) {
+        return 2;
     }
 }
