@@ -24,6 +24,7 @@ contract RailStakePositionManager is AccessControlUpgradeable, PausableUpgradeab
     bytes32 public constant CREATOR_ROLE = keccak256("CREATOR_ROLE");
     bytes32 public constant QUEUER_ROLE = keccak256("QUEUER_ROLE");
     bytes32 public constant CLAIMER_ROLE = keccak256("CLAIMER_ROLE");
+    bytes32 public constant VOTING_KEY_MANAGER_ROLE = keccak256("VOTING_KEY_MANAGER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     IERC20 public rail;
@@ -41,7 +42,7 @@ contract RailStakePositionManager is AccessControlUpgradeable, PausableUpgradeab
 
     /// @notice Authorizes a voting proxy without delegating stakes or their rewards.
     /// @dev Governance can replace or clear this key; this remains an administrative trust boundary.
-    function setVotingKey(IRailgunVoting voting, address key) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setVotingKey(IRailgunVoting voting, address key) external onlyRole(VOTING_KEY_MANAGER_ROLE) {
         if (voting.STAKING_CONTRACT() != address(staking)) revert InvalidVotingContract();
         voting.setVotingKey(key);
         emit VotingKeyConfigured(address(voting), key);
