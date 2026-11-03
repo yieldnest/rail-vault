@@ -126,8 +126,7 @@ history.
 
 There is no trusted price or tally input. Existing proxy administrators and vault
 configuration roles remain trusted; the manager administrator can replace or
-clear the voting key. The script requires live accounting at escrow deployment;
-governance must retain that configuration. The escrow ProxyAdmin owner is trusted
+clear the voting key. The escrow ProxyAdmin owner is trusted
 with custody and voting: it can replace the implementation and must preserve
 storage layout and voting semantics. The escrow has no separate runtime admin
 functions. Sponsorship and proposal creation remain external to this escrow.
