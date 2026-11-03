@@ -7,7 +7,8 @@ import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @notice Total-supply history using the vault's existing hook callbacks.
-/// @dev Install directly, not through MetaHooks. No owner, mutable config, or share-minting calls.
+/// @dev Supports direct installation or calls through the vault's configured hook (e.g. MetaHooks).
+/// Run after any other hook that changes supply. No owner, mutable config, or share-minting calls.
 /// Governance must never detach and reinstall this hook: the vault exposes no installation nonce
 /// and an unobserved removal/reinstallation cannot be reliably detected onchain.
 contract StakedRailSupplyHook is IHooks {
@@ -18,9 +19,7 @@ contract StakedRailSupplyHook is IHooks {
     Checkpoints.Trace208 private supplyHistory;
 
     error InvalidVault();
-    error InactiveHook();
     error HistoryNotStarted();
-    error IncompleteHistory();
     error InvalidSnapshotTime();
     error ImmutableConfig();
 
@@ -29,8 +28,8 @@ contract StakedRailSupplyHook is IHooks {
         VAULT = vault_;
     }
 
-    modifier onlyVault() {
-        if (msg.sender != address(VAULT)) revert CallerNotVault();
+    modifier onlyVaultOrHook() {
+        if (msg.sender != address(VAULT) && msg.sender != address(VAULT.hooks())) revert CallerNotVault();
         _;
     }
 
@@ -39,81 +38,59 @@ contract StakedRailSupplyHook is IHooks {
     }
 
     function getConfig() external pure returns (Config memory config) {
-        config = Config(true, true, true, true, true, true, true, true, true, true);
+        config = Config(false, true, false, true, false, true, false, true, false, true);
     }
 
     function setConfig(Config memory) external pure {
         revert ImmutableConfig();
     }
 
-    /// @notice Seed existing supply after installation. Later calls cannot repair a history gap.
+    /// @notice Seed existing supply during setup. Later calls record current supply but cannot reconstruct missed history.
     function checkpoint() external {
-        if (address(VAULT.hooks()) != address(this)) revert InactiveHook();
         if (historyStartedAt == 0) {
             historyStartedAt = block.timestamp;
-        } else {
-            assertActive();
         }
         _record();
     }
 
-    /// @notice Reject detached hooks and detectable missed changes, including transient supply changes.
-    function assertActive() public view {
-        if (address(VAULT.hooks()) != address(this)) revert InactiveHook();
-        if (historyStartedAt == 0) revert HistoryNotStarted();
-        if (supplyHistory.latest() != VAULT.totalSupply()) revert IncompleteHistory();
-    }
-
     function totalSupplyBefore(uint256 timestamp) external view returns (uint256) {
-        assertActive();
         if (timestamp == 0 || timestamp > block.timestamp) revert InvalidSnapshotTime();
         if (timestamp <= historyStartedAt) return 0;
         return supplyHistory.upperLookupRecent(SafeCast.toUint48(timestamp - 1));
     }
 
     function _record() private {
-        if (address(VAULT.hooks()) != address(this)) revert InactiveHook();
         if (historyStartedAt == 0) revert HistoryNotStarted();
         supplyHistory.push(SafeCast.toUint48(block.timestamp), SafeCast.toUint208(VAULT.totalSupply()));
     }
 
-    function beforeDeposit(DepositParams memory) external view onlyVault {
-        assertActive();
-    }
+    function beforeDeposit(DepositParams memory) external view onlyVaultOrHook {}
 
-    function afterDeposit(DepositParams memory) external onlyVault {
+    function afterDeposit(DepositParams memory) external onlyVaultOrHook {
         _record();
     }
 
-    function beforeMint(MintParams memory) external view onlyVault {
-        assertActive();
-    }
+    function beforeMint(MintParams memory) external view onlyVaultOrHook {}
 
-    function afterMint(MintParams memory) external onlyVault {
+    function afterMint(MintParams memory) external onlyVaultOrHook {
         _record();
     }
 
-    function beforeWithdraw(WithdrawParams memory) external view onlyVault {
-        assertActive();
-    }
+    function beforeWithdraw(WithdrawParams memory) external view onlyVaultOrHook {}
 
-    function afterWithdraw(WithdrawParams memory) external onlyVault {
+    function afterWithdraw(WithdrawParams memory) external onlyVaultOrHook {
         _record();
     }
 
-    function beforeRedeem(RedeemParams memory) external view onlyVault {
-        assertActive();
-    }
+    function beforeRedeem(RedeemParams memory) external view onlyVaultOrHook {}
 
-    function afterRedeem(RedeemParams memory) external onlyVault {
+    function afterRedeem(RedeemParams memory) external onlyVaultOrHook {
         _record();
     }
 
-    function beforeProcessAccounting(BeforeProcessAccountingParams memory) external view onlyVault {
-        assertActive();
-    }
+    function beforeProcessAccounting(BeforeProcessAccountingParams memory) external view onlyVaultOrHook {}
 
-    function afterProcessAccounting(AfterProcessAccountingParams memory) external onlyVault {
+    function afterProcessAccounting(AfterProcessAccountingParams memory) external onlyVaultOrHook {
         _record();
     }
 }

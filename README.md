@@ -75,11 +75,15 @@ The escrow uses a small custom state machine with OZ `SafeERC20`,
 ### Deployment and trust boundaries
 
 The position manager must expose `setVotingKey`; no governance changes to the
-strategy implementation are required. Install `StakedRailSupplyHook` directly
-with `setHooks`, then call its `checkpoint()` to start history before deploying
-the escrow. Earlier history cannot be reconstructed. Locks become eligible only
+strategy implementation are required. Install `StakedRailSupplyHook` directly or
+include it in MetaHooks, then call its `checkpoint()` during setup to start
+history before deploying the escrow. Pass the supply hook explicitly to the
+escrow constructor. Earlier history cannot be reconstructed. Locks become eligible only
 for later interval cutoffs. The hook has fixed callback settings and cannot mint
-shares. This deployment does not compose it with fee hooks or MetaHooks.
+shares. With MetaHooks, place it after all hooks that mint or burn shares so it
+records the final supply. Callbacks accept the vault or its configured hook;
+initialization does not require direct installation. The deployment script still
+installs the hook directly.
 
 `script/DeployStakedRailVoting.s.sol` reads `ST_RAIL`, `RAILGUN_VOTING`, and
 `UNLOCK_COOLDOWN` (seconds). It deploys, installs, and initializes the hook,
@@ -89,13 +93,14 @@ as a holder of both the strategy's `HOOKS_MANAGER_ROLE` and the manager's
 governance. The script rejects an existing hook instead of replacing it. No
 deployment is performed automatically.
 
-Removing the hook blocks new locks and voting; unlock requests and matured
-withdrawals remain available.
+Removing the hook does not block locks or voting. Historical supply reads do not
+check whether the hook remains installed or matches current supply.
 The vault does not notify hooks when they are removed: removal followed by
 reinstallation can leave undetectable gaps if supply returns to its recorded
 value. Governance must never reuse this history after detaching the hook. Deploy
 a new hook and escrow, initialize fresh history, and register the new voting key
-instead. Current-supply checks detect mismatches, not every possible history gap.
+instead. A later checkpoint records current supply but cannot reconstruct missed
+history.
 
 There is no trusted price or tally input. Existing proxy administrators and vault
 configuration roles remain trusted; the manager administrator can replace or

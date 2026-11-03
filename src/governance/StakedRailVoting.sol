@@ -48,7 +48,12 @@ contract StakedRailVoting is ReentrancyGuard {
     error VotingClosed();
     error InsufficientVotingPower();
 
-    constructor(StakedRailStrategy stRail_, IRailgunVoting voting_, uint256 unlockCooldown_) {
+    constructor(
+        StakedRailStrategy stRail_,
+        IRailgunVoting voting_,
+        StakedRailSupplyHook supplyHook_,
+        uint256 unlockCooldown_
+    ) {
         if (address(stRail_).code.length == 0 || address(voting_).code.length == 0 || unlockCooldown_ == 0) {
             revert InvalidConfiguration();
         }
@@ -59,16 +64,14 @@ contract StakedRailVoting is ReentrancyGuard {
             revert InvalidConfiguration();
         }
         snapshots = IRailgunVotingSnapshots(address(positionManager.staking()));
-        supplyHook = StakedRailSupplyHook(address(stRail_.hooks()));
+        supplyHook = supplyHook_;
         if (address(supplyHook.VAULT()) != address(stRail_)) revert InvalidConfiguration();
-        supplyHook.assertActive();
         unlockCooldown = unlockCooldown_;
     }
 
     /// @notice Lock shares indefinitely until the owner requests an unlock.
     /// @dev Each deposit is a separate position; top-ups cannot inherit an older position's eligibility.
     function lock(uint256 shares) external nonReentrant returns (uint256 id) {
-        supplyHook.assertActive();
         if (shares == 0) revert InvalidLock();
         id = locks.length;
         locks.push(Lock(msg.sender, shares, block.timestamp, 0, 0, false));
