@@ -50,7 +50,7 @@ revoking votes already cast. It sets the withdrawal time to:
 max(unlock request time + unlockCooldown, latest voted proposal's final NO-vote deadline)
 ```
 
-The cooldown is immutable and configured at deployment. Requests cannot be
+The cooldown is set at initialization and has no configuration setter. Requests cannot be
 cancelled or restarted, and time spent locked before requesting does not count
 toward the cooldown. Even a vote at the end of a voting window is followed by a
 full cooldown if the user requests an unlock immediately afterward. Withdrawal
@@ -70,7 +70,7 @@ implements scheduled beneficiary releases, while
 provide voting checkpoints and delayed transaction execution. None directly
 provides this per-lock unlock-request cooldown with RAILGUN proposal deadlines.
 The escrow uses a small custom state machine with OZ `SafeERC20`,
-`ReentrancyGuard`, and `Math`; the supply hook uses OZ `Checkpoints`.
+`ReentrancyGuardUpgradeable`, and `Math`; the supply hook uses OZ `Checkpoints`.
 
 ### Deployment and trust boundaries
 
@@ -83,14 +83,21 @@ neither the voting escrow nor MetaHooks needs a new address. Future implementati
 must preserve the namespace and field layout. The ProxyAdmin owner is trusted to
 choose implementations that preserve the history and its meaning.
 
-This applies to hooks deployed with the proxy from the start. An existing directly
-deployed, non-upgradeable hook cannot be converted into this proxy in place.
+`StakedRailVoting` also runs behind a transparent proxy, initialized atomically
+with the strategy, native voting contract, supply hook, and cooldown. Its
+ERC-7201 namespace `yieldnest.storage.StakedRailVoting` holds dependencies,
+locks, total locked shares, and per-proposal vote usage. Compatible upgrades
+preserve custody, withdrawal deadlines, spent voting allowances, and the manager's
+registered voting-key address. Its implementation disables initialization.
+
+Both contracts must be deployed with proxies from the start. Existing directly
+deployed contracts cannot be converted into proxies in place.
 
 The position manager must expose `setVotingKey`; no governance changes to the
 strategy implementation are required. Install `StakedRailSupplyHook` directly or
 include it in MetaHooks, then call its `checkpoint()` during setup to start
 history before deploying the escrow. Pass the supply hook explicitly to the
-escrow constructor. Earlier history cannot be reconstructed. Locks become eligible only
+escrow initializer. Earlier history cannot be reconstructed. Locks become eligible only
 for later interval cutoffs. The hook has fixed callback settings and cannot mint
 shares. With MetaHooks, place it after all hooks that mint or burn shares so it
 records the final supply. Callbacks accept the vault or its configured hook;
@@ -99,9 +106,10 @@ installs the hook directly.
 
 `script/DeployStakedRailVoting.s.sol` reads `ST_RAIL`, `RAILGUN_VOTING`,
 `UNLOCK_COOLDOWN` (seconds), and `HOOK_PROXY_ADMIN_OWNER` (the governance address
-that owns the hook's ProxyAdmin). It deploys the implementation and initialized
-proxy, installs the hook, and seeds its history,
-then deploys the immutable escrow and calls the manager's `setVotingKey`. Execute
+that owns the hook's ProxyAdmin), plus `VOTING_PROXY_ADMIN_OWNER` for the
+escrow's ProxyAdmin. It deploys and initializes the hook proxy, installs the hook,
+and seeds its history, then deploys and initializes the escrow proxy and calls
+the manager's `setVotingKey`. Execute
 as a holder of both the strategy's `HOOKS_MANAGER_ROLE` and the manager's
 `DEFAULT_ADMIN_ROLE`, or perform installation and registration separately through
 governance. The script rejects an existing hook instead of replacing it. No
@@ -119,9 +127,10 @@ history.
 There is no trusted price or tally input. Existing proxy administrators and vault
 configuration roles remain trusted; the manager administrator can replace or
 clear the voting key. The script requires live accounting at escrow deployment;
-governance must retain that configuration. The escrow itself is not upgradeable
-and has no administrator. Sponsorship and proposal creation remain external to
-this escrow.
+governance must retain that configuration. The escrow ProxyAdmin owner is trusted
+with custody and voting: it can replace the implementation and must preserve
+storage layout and voting semantics. The escrow has no separate runtime admin
+functions. Sponsorship and proposal creation remain external to this escrow.
 
 ## Contract layout
 
@@ -225,7 +234,9 @@ Each TUP has its own ProxyAdmin, initially owned by `ADMIN`. Initializers
 run atomically during proxy creation and implementation initializers are disabled.
 The separately deployed governance supply hook also uses a TUP, with its
 ProxyAdmin owned by `HOOK_PROXY_ADMIN_OWNER`. Its ERC-7201 storage preserves
-checkpoint history across compatible implementation upgrades.
+checkpoint history across compatible implementation upgrades. The voting escrow
+uses a separate TUP owned through `VOTING_PROXY_ADMIN_OWNER`, preserving locks
+and vote usage in its own ERC-7201 namespace.
 
 Withdrawal bags retain the existing `BeaconProxyFactory` architecture: the factory
 itself is a TUP, while bags are beacon proxies sharing a factory-owned beacon.

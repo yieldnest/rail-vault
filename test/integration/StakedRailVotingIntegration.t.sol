@@ -57,7 +57,15 @@ contract StakedRailVotingIntegrationTest is Test {
         d.strategy.grantRole(d.strategy.HOOKS_MANAGER_ROLE(), address(this));
         d.strategy.setHooks(address(hook));
         hook.checkpoint();
-        StakedRailVoting escrow = new StakedRailVoting(d.strategy, voting, hook, 7 days);
+        StakedRailVoting escrow = StakedRailVoting(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new StakedRailVoting()),
+                    address(this),
+                    abi.encodeCall(StakedRailVoting.initialize, (d.strategy, voting, hook, 7 days))
+                )
+            )
+        );
         d.manager.setVotingKey(voting, address(escrow));
         assertEq(voting.votingKey(address(d.manager)), address(escrow));
 
