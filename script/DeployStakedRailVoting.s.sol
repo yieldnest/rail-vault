@@ -6,6 +6,7 @@ import {StakedRailVoting} from "../src/governance/StakedRailVoting.sol";
 import {StakedRailStrategy} from "../src/core/StakedRailStrategy.sol";
 import {IRailgunVoting} from "../src/railgun/IRailgunVoting.sol";
 import {StakedRailSupplyHook} from "../src/governance/StakedRailSupplyHook.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 
 /// @dev Caller needs manager DEFAULT_ADMIN_ROLE and strategy HOOKS_MANAGER_ROLE.
@@ -15,8 +16,17 @@ contract DeployStakedRailVoting is Script {
         IRailgunVoting voting = IRailgunVoting(vm.envAddress("RAILGUN_VOTING"));
         uint256 cooldown = vm.envUint("UNLOCK_COOLDOWN");
         require(address(strategy.hooks()) == address(0), "existing hooks require explicit migration");
+        address proxyAdminOwner = vm.envAddress("HOOK_PROXY_ADMIN_OWNER");
         vm.startBroadcast();
-        StakedRailSupplyHook hook = new StakedRailSupplyHook(IVault(address(strategy)));
+        StakedRailSupplyHook hook = StakedRailSupplyHook(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new StakedRailSupplyHook()),
+                    proxyAdminOwner,
+                    abi.encodeCall(StakedRailSupplyHook.initialize, (IVault(address(strategy))))
+                )
+            )
+        );
         strategy.setHooks(address(hook));
         hook.checkpoint();
         escrow = new StakedRailVoting(strategy, voting, hook, cooldown);

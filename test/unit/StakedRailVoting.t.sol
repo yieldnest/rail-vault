@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {MockHookRouter} from "../mocks/MockHookRouter.sol";
 import {RailSystemFixture} from "../utils/RailSystemFixture.sol";
 import {MockRailgunVoting} from "../mocks/MockRailgunVoting.sol";
@@ -8,6 +10,7 @@ import {StakedRailVoting} from "../../src/governance/StakedRailVoting.sol";
 import {IRailgunVoting, IRailgunVotingSnapshots} from "../../src/railgun/IRailgunVoting.sol";
 
 import {StakedRailSupplyHook} from "../../src/governance/StakedRailSupplyHook.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 
 contract StakedRailVotingTest is RailSystemFixture {
@@ -23,7 +26,15 @@ contract StakedRailVotingTest is RailSystemFixture {
     function setUp() public {
         vm.warp(100 days);
         _deploySystem();
-        hook = new StakedRailSupplyHook(IVault(address(d.strategy)));
+        hook = StakedRailSupplyHook(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new StakedRailSupplyHook()),
+                    address(this),
+                    abi.encodeCall(StakedRailSupplyHook.initialize, (IVault(address(d.strategy))))
+                )
+            )
+        );
         d.strategy.grantRole(d.strategy.HOOKS_MANAGER_ROLE(), address(this));
         d.strategy.setHooks(address(new MockHookRouter(IVault(address(d.strategy)), hook)));
         hook.checkpoint();
@@ -83,6 +94,27 @@ contract StakedRailVotingTest is RailSystemFixture {
         assertEq(no, 9000 ether);
         assertEq(voting.getVotes(1, address(d.manager)), 10_000 ether);
         assertEq(escrow.totalLocked(), 10_000 ether);
+    }
+
+    function testSupplyHookUpgradePreservesVotingEntitlementThroughRouter() external {
+        vm.prank(alice);
+        escrow.vote(aliceLock, 1, 1000 ether, true, 0);
+        address router = address(d.strategy.hooks());
+        bytes32 slot = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
+        ProxyAdmin admin = ProxyAdmin(address(uint160(uint256(vm.load(address(hook), slot)))));
+        admin.upgradeAndCall(ITransparentUpgradeableProxy(address(hook)), address(new StakedRailSupplyHook()), "");
+        assertEq(address(escrow.supplyHook()), address(hook));
+        assertEq(address(d.strategy.hooks()), router);
+        assertEq(escrow.votingPower(aliceLock, 1, 0), 3000 ether);
+        assertEq(escrow.votesUsed(1, aliceLock), 1000 ether);
+        _deposit(bob, 100 ether);
+        vm.warp(block.timestamp + 1);
+        assertEq(hook.totalSupplyBefore(block.timestamp), 10_100 ether);
+        vm.startPrank(alice);
+        escrow.vote(aliceLock, 1, 2000 ether, false, 0);
+        vm.expectRevert(StakedRailVoting.InsufficientVotingPower.selector);
+        escrow.vote(aliceLock, 1, 1, true, 0);
+        vm.stopPrank();
     }
 
     function testOnlyLockOwnerCanVoteOrWithdraw() external {
@@ -199,7 +231,15 @@ contract StakedRailVotingTest is RailSystemFixture {
     function testAppreciatedSharesCarryMoreThanOneRailVotePerShare() external {
         vm.warp(200 days);
         _deploySystem();
-        hook = new StakedRailSupplyHook(IVault(address(d.strategy)));
+        hook = StakedRailSupplyHook(
+            address(
+                new TransparentUpgradeableProxy(
+                    address(new StakedRailSupplyHook()),
+                    address(this),
+                    abi.encodeCall(StakedRailSupplyHook.initialize, (IVault(address(d.strategy))))
+                )
+            )
+        );
         d.strategy.grantRole(d.strategy.HOOKS_MANAGER_ROLE(), address(this));
         d.strategy.setHooks(address(new MockHookRouter(IVault(address(d.strategy)), hook)));
         hook.checkpoint();
