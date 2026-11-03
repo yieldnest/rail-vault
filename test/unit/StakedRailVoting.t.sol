@@ -135,8 +135,8 @@ contract StakedRailVotingTest is RailSystemFixture {
     }
 
     function _lockHash(uint256 id) internal view returns (bytes32) {
-        (address owner, uint256 shares, uint256 created, uint256 unlock, uint256 end, bool withdrawn) = escrow.locks(id);
-        return keccak256(abi.encode(owner, shares, created, unlock, end, withdrawn));
+        (address owner, uint256 shares, uint256 created, uint256 unlock, bool withdrawn) = escrow.locks(id);
+        return keccak256(abi.encode(owner, shares, created, unlock, withdrawn));
     }
 
     function testUpgradePreservesLocksVotesAndWithdrawals() external {
@@ -146,7 +146,7 @@ contract StakedRailVotingTest is RailSystemFixture {
         escrow.requestUnlock(bobLock);
         bytes32 aliceBefore = _lockHash(aliceLock);
         bytes32 bobBefore = _lockHash(bobLock);
-        (,,, uint256 deadline,,) = escrow.locks(bobLock);
+        (,,, uint256 deadline,) = escrow.locks(bobLock);
 
         _escrowAdmin()
             .upgradeAndCall(ITransparentUpgradeableProxy(address(escrow)), address(new StakedRailVotingV2()), "");
@@ -329,8 +329,6 @@ contract StakedRailVotingTest is RailSystemFixture {
         vm.expectRevert(bytes("not voting key"));
         escrow.vote(aliceLock, 1, 1000 ether, true, 0);
         assertEq(escrow.votesUsed(1, aliceLock), 0);
-        (,,,, uint256 lastVoteEnd,) = escrow.locks(aliceLock);
-        assertEq(lastVoteEnd, 0);
         vm.prank(alice);
         escrow.requestUnlock(aliceLock);
         vm.warp(block.timestamp + 7 days);
@@ -486,9 +484,8 @@ contract StakedRailVotingTest is RailSystemFixture {
         vm.startPrank(alice);
         escrow.vote(aliceLock, 1, 1, false, 0);
         escrow.requestUnlock(aliceLock);
-        (,,, uint256 unlockAt, uint256 lastVoteEnd,) = escrow.locks(aliceLock);
+        (,,, uint256 unlockAt,) = escrow.locks(aliceLock);
         assertEq(unlockAt, finalDeadline - 1 + 7 days);
-        assertEq(lastVoteEnd, finalDeadline);
         vm.warp(finalDeadline);
         vm.expectRevert(StakedRailVoting.StillLocked.selector);
         escrow.withdraw(aliceLock);
@@ -497,7 +494,7 @@ contract StakedRailVotingTest is RailSystemFixture {
         vm.stopPrank();
     }
 
-    function testFuzzUnlockWaitsForBothCooldownAndLatestVotedDeadline(uint256 cooldown) external {
+    function testFuzzUnlockUsesOnlyCooldownRegardlessOfVotedDeadlines(uint256 cooldown) external {
         cooldown = bound(cooldown, 1, 30 days);
         escrow = StakedRailVoting(
             address(
@@ -520,15 +517,12 @@ contract StakedRailVotingTest is RailSystemFixture {
         voting.prepare(4, cutoff + 2 hours, cutoff / 1 days);
         vm.warp(cutoff + 3 days);
         vm.startPrank(alice);
-        // Voting on an earlier-ending proposal last must not shorten the deadline.
+        // Neither proposal deadline affects the requested cooldown.
         escrow.vote(id, 4, 1, true, 0);
         escrow.vote(id, 3, 1, false, 0);
-        uint256 deadline = cutoff + 2 hours + voting.VOTING_NAY_END_OFFSET();
         uint256 expectedUnlock = block.timestamp + cooldown;
-        if (deadline > expectedUnlock) expectedUnlock = deadline;
         escrow.requestUnlock(id);
-        (,,, uint256 unlockAt, uint256 lastVoteEnd,) = escrow.locks(id);
-        assertEq(lastVoteEnd, deadline);
+        (,,, uint256 unlockAt,) = escrow.locks(id);
         assertEq(unlockAt, expectedUnlock);
         assertEq(escrow.totalLocked(), 100 ether);
         vm.warp(unlockAt - 1);
