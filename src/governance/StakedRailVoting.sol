@@ -10,10 +10,14 @@ import {RailStakePositionManager} from "../core/RailStakePositionManager.sol";
 import {StakedRailSupplyHook} from "./StakedRailSupplyHook.sol";
 import {IRailgunVoting, IRailgunVotingSnapshots} from "../railgun/IRailgunVoting.sol";
 
-/// @notice Non-transferable stRAIL locks with a requested-unlock cooldown that forward fractional RAILGUN votes.
-/// @dev Upgrade authority belongs to the proxy admin. No arbitrary calls or caller-supplied valuation.
+/**
+ * @notice Non-transferable stRAIL locks with a requested-unlock cooldown that forward fractional RAILGUN votes.
+ * @dev Upgrade authority belongs to the proxy admin. No arbitrary calls or caller-supplied valuation.
+ */
 contract StakedRailVoting is ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
+
+    //// STORAGE ////
 
     struct Lock {
         address owner;
@@ -42,13 +46,19 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
         0x53de5e1e9dc7af5e1e09eaec98468fb6ca2629ebebc8fd2a5b8df15514464b00;
 
     function _getVotingStorage() internal pure returns (VotingStorage storage $) {
-        assembly { $.slot := VOTING_STORAGE_LOCATION }
+        assembly {
+            $.slot := VOTING_STORAGE_LOCATION
+        }
     }
+
+    //// EVENTS ////
 
     event Locked(uint256 indexed lockId, address indexed owner, uint256 shares);
     event UnlockRequested(uint256 indexed lockId, address indexed owner, uint256 unlockAt);
     event Withdrawn(uint256 indexed lockId, address indexed owner, uint256 shares);
     event VoteForwarded(uint256 indexed proposalId, uint256 indexed lockId, bool affirmative, uint256 railVotes);
+
+    //// ERRORS ////
 
     error InvalidConfiguration();
     error InvalidLock();
@@ -57,6 +67,8 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
     error IneligibleLock();
     error VotingClosed();
     error InsufficientVotingPower();
+
+    //// INITIALIZATION ////
 
     constructor() {
         _disableInitializers();
@@ -75,60 +87,83 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
         ) {
             revert InvalidConfiguration();
         }
+
         __ReentrancyGuard_init();
+
         $.stRail = stRail_;
         $.positionManager = stRail_.positionManager();
         $.voting = voting_;
         if (voting_.STAKING_CONTRACT() != address($.positionManager.staking())) {
             revert InvalidConfiguration();
         }
+
         $.snapshots = IRailgunVotingSnapshots(address($.positionManager.staking()));
         $.supplyHook = supplyHook_;
         $.unlockCooldown = unlockCooldown_;
     }
 
-    /// @notice Lock shares indefinitely until the owner requests an unlock.
-    /// @dev Each deposit is a separate position; top-ups cannot inherit an older position's eligibility.
+    //// LOCKING ////
+
+    /**
+     * @notice Lock shares indefinitely until the owner requests an unlock.
+     * @dev Each deposit is a separate position; top-ups cannot inherit an older position's eligibility.
+     */
     function lock(uint256 shares) external nonReentrant returns (uint256 id) {
         VotingStorage storage $ = _getVotingStorage();
         if (shares == 0) revert InvalidLock();
+
         id = $.locks.length;
         $.locks.push(Lock(msg.sender, shares, block.timestamp, 0, 0, false));
         $.totalLocked += shares;
+
         IERC20(address($.stRail)).safeTransferFrom(msg.sender, address(this), shares);
+
         emit Locked(id, msg.sender, shares);
     }
 
-    /// @notice Stop voting and start the withdrawal cooldown. Requests cannot be cancelled or restarted.
-    /// @dev Shares also remain held through the latest final NO-vote deadline this lock voted on.
-    /// Native RAILGUN voting uses historical snapshots, so unstaking does not itself remove eligibility
-    /// for an already-snapshotted proposal. This escrow deliberately blocks further votes immediately
-    /// when unlock is requested; votes already cast remain in effect.
+    /**
+     * @notice Stop voting and start the withdrawal cooldown. Requests cannot be cancelled or restarted.
+     * @dev Shares also remain held through the latest final NO-vote deadline this lock voted on.
+     * Native RAILGUN voting uses historical snapshots, so unstaking does not itself remove eligibility
+     * for an already-snapshotted proposal. This escrow deliberately blocks further votes immediately
+     * when unlock is requested; votes already cast remain in effect.
+     */
     function requestUnlock(uint256 id) external nonReentrant {
         VotingStorage storage $ = _getVotingStorage();
         Lock storage position = $.locks[id];
         if (msg.sender != position.owner) revert NotOwner();
         if (position.withdrawn || position.unlockAt != 0) revert InvalidLock();
+
         position.unlockAt = Math.max(block.timestamp + $.unlockCooldown, position.lastVoteEnd);
+
         emit UnlockRequested(id, msg.sender, position.unlockAt);
     }
 
-    /// @notice Return shares after a requested unlock matures, even if voting is disabled upstream.
+    /**
+     * @notice Return shares after a requested unlock matures, even if voting is disabled upstream.
+     */
     function withdraw(uint256 id) external nonReentrant {
         VotingStorage storage $ = _getVotingStorage();
         Lock storage position = $.locks[id];
         if (msg.sender != position.owner) revert NotOwner();
         if (position.withdrawn) revert InvalidLock();
         if (position.unlockAt == 0 || block.timestamp < position.unlockAt) revert StillLocked();
+
         position.withdrawn = true;
         $.totalLocked -= position.shares;
+
         IERC20(address($.stRail)).safeTransfer(position.owner, position.shares);
+
         emit Withdrawn(id, position.owner, position.shares);
     }
 
-    /// @notice Maximum cumulative RAIL votes for this lock and proposal.
-    /// @dev Historical active backing per share caps live RAIL valuation. Donations cannot buy
-    /// more historical votes; unlocked/nonparticipating stRAIL does not amplify participants.
+    //// VOTING ////
+
+    /**
+     * @notice Maximum cumulative RAIL votes for this lock and proposal.
+     * @dev Historical active backing per share caps live RAIL valuation. Donations cannot buy
+     * more historical votes; unlocked/nonparticipating stRAIL does not amplify participants.
+     */
     function votingPower(uint256 id, uint256 proposalId, uint256 hint) public view returns (uint256) {
         VotingStorage storage $ = _getVotingStorage();
         Lock storage position = $.locks[id];
@@ -138,15 +173,19 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
             calledAt == 0 || cutoff > block.timestamp || position.withdrawn || position.createdAt >= cutoff
                 || position.unlockAt != 0
         ) return 0;
+
         uint256 supply = $.supplyHook.totalSupplyBefore(cutoff);
         if (supply == 0) return 0;
+
         uint256 eligibleRail = $.snapshots.accountSnapshotAt(address($.positionManager), interval, hint).votingPower;
         uint256 historicalAllocation = Math.mulDiv(position.shares, eligibleRail, supply);
         return Math.min(historicalAllocation, $.stRail.convertToAssets(position.shares));
     }
 
-    /// @notice Cast an irreversible amount of this lock's RAIL voting entitlement.
-    /// @param amount RAIL base units, not stRAIL shares. Partial YES/NO votes are supported.
+    /**
+     * @notice Cast an irreversible amount of this lock's RAIL voting entitlement.
+     * @param amount RAIL base units, not stRAIL shares. Partial YES/NO votes are supported.
+     */
     function vote(uint256 id, uint256 proposalId, uint256 amount, bool affirmative, uint256 hint)
         external
         nonReentrant
@@ -160,15 +199,22 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
             calledAt == 0 || block.timestamp <= calledAt + $.voting.VOTING_START_OFFSET()
                 || block.timestamp >= calledAt + end
         ) revert VotingClosed();
+
         uint256 power = votingPower(id, proposalId, hint);
         if (power == 0) revert IneligibleLock();
+
         uint256 used = $.votesUsed[proposalId][id];
         if (amount == 0 || used + amount > power) revert InsufficientVotingPower();
+
         $.votesUsed[proposalId][id] = used + amount;
         position.lastVoteEnd = Math.max(position.lastVoteEnd, calledAt + $.voting.VOTING_NAY_END_OFFSET());
+
         $.voting.vote(proposalId, amount, affirmative, address($.positionManager), hint);
+
         emit VoteForwarded(proposalId, id, affirmative, amount);
     }
+
+    //// GETTERS ////
 
     function stRail() public view returns (StakedRailStrategy) {
         return _getVotingStorage().stRail;

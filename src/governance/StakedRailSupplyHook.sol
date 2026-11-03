@@ -7,14 +7,18 @@ import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-/// @notice Total-supply history using the vault's existing hook callbacks.
-/// @dev Supports direct installation or calls through the vault's configured hook (e.g. MetaHooks).
-/// Run after any other hook that changes supply. Upgrade authority belongs to the proxy admin.
-/// Checkpoint history is kept in ERC-7201 storage across implementation upgrades.
-/// Governance must never detach and reinstall this hook: the vault exposes no installation nonce
-/// and an unobserved removal/reinstallation cannot be reliably detected onchain.
+/**
+ * @notice Total-supply history using the vault's existing hook callbacks.
+ * @dev Supports direct installation or calls through the vault's configured hook (e.g. MetaHooks).
+ * Run after any other hook that changes supply. Upgrade authority belongs to the proxy admin.
+ * Checkpoint history is kept in ERC-7201 storage across implementation upgrades.
+ * Governance must never detach and reinstall this hook: the vault exposes no installation nonce
+ * and an unobserved removal/reinstallation cannot be reliably detected onchain.
+ */
 contract StakedRailSupplyHook is IHooks, Initializable {
     using Checkpoints for Checkpoints.Trace208;
+
+    //// STORAGE ////
 
     /// @custom:storage-location erc7201:yieldnest.storage.StakedRailSupplyHook
     struct SupplyHookStorage {
@@ -33,10 +37,14 @@ contract StakedRailSupplyHook is IHooks, Initializable {
         }
     }
 
+    //// ERRORS ////
+
     error InvalidVault();
     error HistoryNotStarted();
     error InvalidSnapshotTime();
     error ImmutableConfig();
+
+    //// INITIALIZATION ////
 
     constructor() {
         _disableInitializers();
@@ -44,8 +52,11 @@ contract StakedRailSupplyHook is IHooks, Initializable {
 
     function initialize(IVault vault_) external initializer {
         if (address(vault_) == address(0)) revert InvalidVault();
+
         _getSupplyHookStorage().vault = vault_;
     }
+
+    //// GETTERS ////
 
     function VAULT() public view returns (IVault) {
         return _getSupplyHookStorage().vault;
@@ -55,11 +66,15 @@ contract StakedRailSupplyHook is IHooks, Initializable {
         return _getSupplyHookStorage().historyStartedAt;
     }
 
+    //// MODIFIERS ////
+
     modifier onlyVaultOrHook() {
         IVault vault = VAULT();
         if (msg.sender != address(vault) && msg.sender != address(vault.hooks())) revert CallerNotVault();
         _;
     }
+
+    //// CONFIGURATION ////
 
     function name() external pure returns (string memory) {
         return "StakedRailSupplyHook";
@@ -73,7 +88,11 @@ contract StakedRailSupplyHook is IHooks, Initializable {
         revert ImmutableConfig();
     }
 
-    /// @notice Seed existing supply during setup. Later calls record current supply but cannot reconstruct missed history.
+    //// CHECKPOINTS ////
+
+    /**
+     * @notice Seed existing supply during setup. Later calls record current supply but cannot reconstruct missed history.
+     */
     function checkpoint() external {
         SupplyHookStorage storage $ = _getSupplyHookStorage();
         if ($.historyStartedAt == 0) {
@@ -84,6 +103,7 @@ contract StakedRailSupplyHook is IHooks, Initializable {
 
     function totalSupplyBefore(uint256 timestamp) external view returns (uint256) {
         if (timestamp == 0 || timestamp > block.timestamp) revert InvalidSnapshotTime();
+
         SupplyHookStorage storage $ = _getSupplyHookStorage();
         if (timestamp <= $.historyStartedAt) return 0;
         return $.supplyHistory.upperLookupRecent(SafeCast.toUint48(timestamp - 1));
@@ -92,8 +112,11 @@ contract StakedRailSupplyHook is IHooks, Initializable {
     function _record() private {
         SupplyHookStorage storage $ = _getSupplyHookStorage();
         if ($.historyStartedAt == 0) revert HistoryNotStarted();
+
         $.supplyHistory.push(SafeCast.toUint48(block.timestamp), SafeCast.toUint208($.vault.totalSupply()));
     }
+
+    //// HOOK CALLBACKS ////
 
     function beforeDeposit(DepositParams memory) external view onlyVaultOrHook {}
 

@@ -9,8 +9,12 @@ import {StakedRailSupplyHook} from "../src/governance/StakedRailSupplyHook.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {IVault} from "@yieldnest-vault/interface/IVault.sol";
 
-/// @dev Caller needs manager DEFAULT_ADMIN_ROLE and strategy HOOKS_MANAGER_ROLE.
+/**
+ * @dev Caller needs manager DEFAULT_ADMIN_ROLE and strategy HOOKS_MANAGER_ROLE.
+ */
 contract DeployStakedRailVoting is Script {
+    //// DEPLOYMENT ////
+
     function run() external returns (StakedRailVoting escrow) {
         StakedRailStrategy strategy = StakedRailStrategy(payable(vm.envAddress("ST_RAIL")));
         IRailgunVoting voting = IRailgunVoting(vm.envAddress("RAILGUN_VOTING"));
