@@ -24,7 +24,6 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
         uint256 shares;
         uint256 createdAt;
         uint256 unlockAt; // Zero until unlock is requested.
-        uint256 lastVoteEnd;
         bool withdrawn;
     }
 
@@ -99,7 +98,7 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
         if (shares == 0) revert InvalidLock();
 
         id = locks.length;
-        locks.push(Lock(msg.sender, shares, block.timestamp, 0, 0, false));
+        locks.push(Lock(msg.sender, shares, block.timestamp, 0, false));
         totalLocked += shares;
 
         IERC20(address(stRail)).safeTransferFrom(msg.sender, address(this), shares);
@@ -109,8 +108,7 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
 
     /**
      * @notice Stop voting and start the withdrawal cooldown. Requests cannot be cancelled or restarted.
-     * @dev Shares also remain held through the latest final NO-vote deadline this lock voted on.
-     * Native RAILGUN voting uses historical snapshots, so unstaking does not itself remove eligibility
+     * @dev Native RAILGUN voting uses historical snapshots, so unstaking does not itself remove eligibility
      * for an already-snapshotted proposal. This escrow deliberately blocks further votes immediately
      * when unlock is requested; votes already cast remain in effect.
      */
@@ -119,7 +117,7 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
         if (msg.sender != position.owner) revert NotOwner();
         if (position.withdrawn || position.unlockAt != 0) revert InvalidLock();
 
-        position.unlockAt = Math.max(block.timestamp + unlockCooldown, position.lastVoteEnd);
+        position.unlockAt = block.timestamp + unlockCooldown;
 
         emit UnlockRequested(id, msg.sender, position.unlockAt);
     }
@@ -189,7 +187,6 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
         if (amount == 0 || used + amount > power) revert InsufficientVotingPower();
 
         votesUsed[proposalId][id] = used + amount;
-        position.lastVoteEnd = Math.max(position.lastVoteEnd, calledAt + voting.VOTING_NAY_END_OFFSET());
 
         voting.vote(proposalId, amount, affirmative, address(positionManager), hint);
 

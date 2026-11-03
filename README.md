@@ -13,8 +13,7 @@ timestamp, early withdrawals, administrator withdrawals, or arbitrary execution
 methods.
 
 For a RAILGUN proposal, a lock must exist **strictly before the start of its
-staking snapshot interval** and have no pending unlock request. Each successful
-vote records the latest final NO-vote deadline the lock must remain held through.
+staking snapshot interval** and have no pending unlock request.
 Locking after a proposal's cutoff does not grant voting rights for that proposal.
 The contract obtains the proposal and manager voting power directly from RAILGUN.
 `StakedRailSupplyHook` records total supply through YieldNest deposit, mint,
@@ -47,14 +46,15 @@ power (clamped to zero if valuation has fallen).
 revoking votes already cast. It sets the withdrawal time to:
 
 ```text
-max(unlock request time + unlockCooldown, latest voted proposal's final NO-vote deadline)
+unlock request time + unlockCooldown
 ```
 
 The cooldown is set at initialization and has no configuration setter. Requests cannot be
 cancelled or restarted, and time spent locked before requesting does not count
 toward the cooldown. Even a vote at the end of a voting window is followed by a
 full cooldown if the user requests an unlock immediately afterward. Withdrawal
-does not wait for proposal execution.
+does not wait for voting to close or for proposal execution. A short configured
+cooldown can therefore allow withdrawal while a previously voted proposal remains open.
 
 At that time, `withdraw(lockId)` returns the same number of stRAIL shares to their
 owner. Unlock requests and withdrawals work independently of the supply hook or
@@ -68,7 +68,7 @@ OpenZeppelin's [VestingWallet](https://docs.openzeppelin.com/contracts/5.x/api/f
 implements scheduled beneficiary releases, while
 [Votes and TimelockController](https://docs.openzeppelin.com/contracts/5.x/api/governance)
 provide voting checkpoints and delayed transaction execution. None directly
-provides this per-lock unlock-request cooldown with RAILGUN proposal deadlines.
+provides this per-lock unlock-request cooldown.
 The escrow uses a small custom state machine with OZ `SafeERC20`,
 `ReentrancyGuardUpgradeable`, and `Math`; the supply hook uses OZ `Checkpoints`.
 
@@ -93,6 +93,8 @@ Both contracts must be deployed with proxies from the start. Existing directly
 deployed contracts cannot be converted into proxies in place. This sequential storage
 layout is also incompatible with earlier ERC-7201 implementations of the hook and
 escrow; existing proxies using those implementations require an explicit migration.
+Removing the former `lastVoteEnd` field also changes the lock array element layout;
+proxies with the earlier lock layout require migration before using this version.
 OpenZeppelin initializer and reentrancy-guard dependencies retain their own
 namespaced storage.
 
