@@ -79,12 +79,11 @@ contract StakedRailVoting is ReentrancyGuardUpgradeable {
         $.stRail = stRail_;
         $.positionManager = stRail_.positionManager();
         $.voting = voting_;
-        if (voting_.STAKING_CONTRACT() != address($.positionManager.staking()) || !stRail_.alwaysComputeTotalAssets()) {
+        if (voting_.STAKING_CONTRACT() != address($.positionManager.staking())) {
             revert InvalidConfiguration();
         }
         $.snapshots = IRailgunVotingSnapshots(address($.positionManager.staking()));
         $.supplyHook = supplyHook_;
-        if (address($.supplyHook.VAULT()) != address(stRail_)) revert InvalidConfiguration();
         $.unlockCooldown = unlockCooldown_;
     }
 
