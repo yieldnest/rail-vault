@@ -34,6 +34,8 @@ contract StakedRailStrategy is BaseStrategy, LinearWithdrawalFee {
         unlockedRail.forceApprove(address(queuedRail), principal);
         // Depositing before rewards are credited and exiting afterward can capture rewards
         // earned by earlier holders.
+        // Depositing, autocompounding rewards, and immediately exiting at a higher rate is offset
+        // by any configured withdrawal fee and, when awaiting stake unlock, 30 days without yield.
         // RAIL redemption can be immediate if liquidity is available and earlier FIFO requests
         // are satisfied. Withdrawal fees still apply.
         shares = queuedRail.depositAsset(address(unlockedRail), principal, address(this));
