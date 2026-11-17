@@ -39,6 +39,9 @@ contract RailRewardsProcessor is ReentrancyGuard {
         rail = railToken;
     }
 
+    // TODO: Smooth reward recognition over time: RAILGUN releases rewards in 14-day batches,
+    // so crediting each batch to stRAIL all at once creates uneven yield and allows deposits
+    // immediately before crediting to capture rewards earned by earlier holders.
     /// @notice Anyone may forward the manager's complete balance of any ERC20.
     /// @return amounts Actual amounts received at each destination.
     function collectTokens(IERC20[] calldata tokens) external nonReentrant returns (uint256[] memory amounts) {
