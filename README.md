@@ -13,7 +13,7 @@ Foundry project for the stRAIL YieldNest RAIL staking strategy described in
 - `src/core/RailReceiptToken.sol`: minimal OZ ERC20 used for ActiveRail and UnlockedRail; only the position manager can mint or burn.
 - `src/processors/StakedRailProcessor.sol`: permissionless chunked staking and qRAIL exits through stRAIL's processor.
 - `src/core/RailStakePositionManager.sol`: records RAILGUN stake IDs, issues/burns principal receipts, queues full positions, and claims matured stakes.
-- `src/processors/RailRewardsProcessor.sol`: permissionless forwarding of already-claimed manager balances to a fixed Splits Swapper; RAIL bypasses swapping and goes to its configured beneficiary. No harvesting, keeper role or arbitrary transfers.
+- `src/processors/RailRewardsProcessor.sol`: permissionless forwarding of already-claimed manager balances to a fixed [Splits Swapper](https://splits.org/blog/meet-swapper/); RAIL bypasses swapping and goes to its configured beneficiary. No harvesting, keeper role or arbitrary transfers.
 - `lib/yieldnest-vault-withdrawals/src/withdrawers/BaseWithdrawer.sol`: existing YieldNest adapter plugged directly into `WithdrawalRequest` for qRAIL redemptions.
 - `src/processors/QueuedRailProcessor.sol`: claims matured RAIL into qRAIL through its processor.
 - `src/withdrawals/SingleAssetFIFOResolver.sol`: permissionless FIFO settlement of qRAIL withdrawal requests.
@@ -60,7 +60,7 @@ the implementations and linked libraries meet on-chain deployment limits.
 
 ### Reward forwarding
 
-Deploy and configure a Splits **Swapper instance** separately, with RAIL as
+Deploy and configure a [Splits **Swapper instance**](https://splits.org/blog/meet-swapper/) separately, with RAIL as
 `tokenToBeneficiary` and the intended reward receiver as `beneficiary`. Set
 `SPLITS_SWAPPER` to that instance, not the factory or callback integration.
 The rewards processor validates the output token at construction and stores both
@@ -69,26 +69,18 @@ configuration unchanged; changing it requires replacing the forwarder and updati
 the manager's `TOKEN_WITHDRAWER_ROLE`. Splits ownership and oracle configuration
 remain trusted governance responsibilities.
 
-Anyone can claim on the Railgun rewards distributor for the position manager,
-then anyone can call `collectTokens(tokens)` on the processor. Non-RAIL tokens go
-directly from the manager to Splits; RAIL goes directly to the fixed beneficiary.
-There is no token registry, claim cursor, keeper role, custody step or arbitrary
-recipient parameter. Do not send funds to the processor itself. Duplicate tokens
-and zero balances are harmless; a failing token reverts the batch, so retry other
-tokens separately. Unsupported reward tokens still require Splits oracle/pricing
-configuration before they can be exchanged.
-
 Funding Splits does **not** execute a swap. A separate permissionless trader calls
 its integration to settle into RAIL. Neither restaking nor shareholder reward
 allocation/accounting is implemented here; choose the beneficiary deliberately
 rather than assuming a vault donation safely compounds rewards.
 
-TODO: Smooth harvested RAIL rewards over 14-day intervals using either Sablier
-Lockup linear streams (one funded stream per batch) or a Synthetix-style rewards
-streamer
+TODO: Smooth harvested RAIL rewards over 14-day intervals using either
+[Sablier Lockup linear streams](https://docs.sablier.com/guides/lockup/examples/create-stream/lockup-linear)
+(one funded stream per batch) or a
+[Synthetix-style rewards streamer](https://github.com/sky-ecosystem/endgame-toolkit/blob/master/src/synthetix/StakingRewards.sol)
 
 Unit/deployer tests use a mock Splits funding destination. The mainnet fork tests
-also create test-owned instances through the deployed Splits Swapper and UniV3
+also create test-owned instances through the deployed [Splits Swapper](https://splits.org/blog/meet-swapper/) and UniV3
 oracle factories, and execute the deployed UniV3 integration against the real
 RAIL/WETH 1% pool. They cover separate Railgun claiming and forwarding, WETH-to-RAIL
 settlement, oracle-underpayment rollback, and RAIL bypass. No mainnet transactions
