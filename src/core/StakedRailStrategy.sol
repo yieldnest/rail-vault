@@ -9,6 +9,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {QueuedRailStrategy} from "./QueuedRailStrategy.sol";
 import {RailStakePositionManager} from "./RailStakePositionManager.sol";
 
+// NOTE: Bootstrap with at least 1 RAIL worth of permanently locked shares to mitigate donation attacks.
 contract StakedRailStrategy is BaseStrategy, LinearWithdrawalFee {
     using SafeERC20 for IERC20;
 

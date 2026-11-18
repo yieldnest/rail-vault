@@ -3,9 +3,7 @@ pragma solidity ^0.8.24;
 
 import {BaseStrategy} from "@yieldnest-vault/strategy/BaseStrategy.sol";
 
-// NOTE: Seed qRAIL with a meaningful amount of permanently locked shares before enabling exits.
-// This mitigates donation-driven rate inflation that can make stRAIL exits return zero qRAIL
-// or make queue deposits round to zero shares. Seeding does not replace zero-output checks.
+// NOTE: Bootstrap with at least 1 RAIL worth of permanently locked shares to mitigate donation attacks.
 contract QueuedRailStrategy is BaseStrategy {
     string public constant Q_RAIL_VERSION = "0.1.0";
 
