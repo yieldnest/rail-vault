@@ -63,16 +63,9 @@ the implementations and linked libraries meet on-chain deployment limits.
 Deploy and configure a [Splits **Swapper instance**](https://splits.org/blog/meet-swapper/) separately, with RAIL as
 `tokenToBeneficiary` and the intended reward receiver as `beneficiary`. Set
 `SPLITS_SWAPPER` to that instance, not the factory or callback integration.
-The rewards processor validates the output token at construction and stores both
-the swapper and beneficiary as immutable destinations. Keep this Splits output
-configuration unchanged; changing it requires replacing the forwarder and updating
-the manager's `TOKEN_WITHDRAWER_ROLE`. Splits ownership and oracle configuration
-remain trusted governance responsibilities.
 
 Funding Splits does **not** execute a swap. A separate permissionless trader calls
-its integration to settle into RAIL. Neither restaking nor shareholder reward
-allocation/accounting is implemented here; choose the beneficiary deliberately
-rather than assuming a vault donation safely compounds rewards.
+its integration to settle into RAIL.
 
 TODO: Smooth harvested RAIL rewards over 14-day intervals using either
 [Sablier Lockup linear streams](https://docs.sablier.com/guides/lockup/examples/create-stream/lockup-linear)
