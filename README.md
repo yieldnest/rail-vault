@@ -83,6 +83,10 @@ its integration to settle into RAIL. Neither restaking nor shareholder reward
 allocation/accounting is implemented here; choose the beneficiary deliberately
 rather than assuming a vault donation safely compounds rewards.
 
+TODO: Smooth harvested RAIL rewards over 14-day intervals using either Sablier
+Lockup linear streams (one funded stream per batch) or a Synthetix-style rewards
+streamer
+
 Unit/deployer tests use a mock Splits funding destination. The mainnet fork tests
 also create test-owned instances through the deployed Splits Swapper and UniV3
 oracle factories, and execute the deployed UniV3 integration against the real
