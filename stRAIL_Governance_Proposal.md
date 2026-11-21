@@ -5,13 +5,11 @@ Status: draft for discussion. No option below is chosen yet.
 ## Premises
 
 - **Supply cap.** stRAIL is capped at a maximum share of RAIL supply (for example 20–30%).
-- **Yield is required.** RAILGUN staking rewards must flow to stRAIL holders. Without them, it would make more sense to boost markets for raw RAIL instead.
-- **No voting from DeFi positions.** stRAIL held in Euler, Uniswap or other protocols cannot vote directly. No off-the-shelf system supports this.
+- **Yield is required.** RAILGUN staking rewards must flow to stRAIL holders.- **No voting from DeFi positions.** stRAIL held in Euler, Uniswap or other protocols cannot vote directly. Off the shelf, this is currently only possible with an off-chain system such as Snapshot, which can be used safely only for signalling and cannot translate the result into direct on-chain action.
 
 ## Background
 
 - RAILGUN pays rewards by staked voting power at a snapshot every 14 days. Voting is not required to earn them.
-- Rewards therefore reach every stRAIL holder through the share price, wherever the token sits.
 - This gives holders a reason to put stRAIL in DeFi and not vote.
 - RAILGUN quorum is a fixed 2M YES votes. RAIL that enters the vault and does not vote makes quorum harder to reach.
 
@@ -22,14 +20,6 @@ Status: draft for discussion. No option below is chosen yet.
 | 1 | No voting | stRAIL does not vote. The vault's power stays uncast. |
 | 2 | Lock to vote | Holders lock stRAIL in a contract that mirrors RAIL governance and vote through it. |
 | 3 | Delegates | A set of delegates votes with the stRAIL stake. |
-
-## Trade-offs
-
-| # | Advantage | Cost | Trust added |
-|---|---|---|---|
-| 1 | Simplest. Nothing to attack. | Up to the capped share of RAIL drops out of governance. | None |
-| 2 | Holders decide. Already built on `feature/governance-voting`. | Locked stRAIL cannot be used in DeFi, so turnout is likely low. | The escrow's upgrade admin |
-| 3 | Power is always cast, even when all stRAIL is in DeFi. | Delegates control up to 20–30% of supply, and RAILGUN votes cannot be undone. | The delegates, and whoever appoints them |
 
 ## Diagrams
 
@@ -116,25 +106,3 @@ Rewards depend on staked voting power only. They are the same under all three op
  Vault power: cast by delegates, up to their caps.
 ```
 
-## Safeguards by option
-
-**Option 1**
-- Never set a RAILGUN voting key on the position manager, or remove the role that can set one.
-
-**Option 2**
-- Unvoted power stays uncast. Do not mirror it onto the voters.
-- Put `setVotingKey` behind a timelock longer than one full vote (more than 6 days).
-- Optional: pay voters a rebate from a fee on rewards, so that locking competes with DeFi yield.
-
-**Option 3**
-- Split the power across several delegates, with a cap per delegate.
-- Let holders choose or remove delegates on-chain, with a timelock on changes.
-- Use the RAILGUN voting key only. Never use `delegate()` on the stakes, because that moves the rewards to the delegatee.
-
-## Open questions
-
-1. What is the cap, and is it enforced in the contract or by policy?
-2. For option 3, who appoints the delegates, and how are they removed?
-3. Can options 2 and 3 be combined, so that locked holders vote directly and delegates vote only the remainder?
-4. Should voters receive a rebate, and how large, given expected DeFi yields?
-5. Would RAILGUN governance consider paying rewards by votes cast? `GovernorRewards` is written as an upgradeable contract, but this has not been confirmed on mainnet.
