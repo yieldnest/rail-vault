@@ -88,11 +88,11 @@ Rewards depend on staked voting power only. They are the same under all three op
 ### Option 3: delegates
 
 ```
- stRAIL holders (anywhere, including DeFi)
-   | appoint / remove, with a timelock
+ RAILGUN governance
+   | appoints the delegates (TBD)
    v
 +----------------------------+
-| Delegate router (new)      |
+| Delegate router            |
 | caps: delegate A <= x%     |
 |       delegate B <= y% ... |
 +----------------------------+
