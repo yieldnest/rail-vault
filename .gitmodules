@@ -1,0 +1,6 @@
+[submodule "lib/yieldnest-vault"]
+	path = lib/yieldnest-vault
+	url = https://github.com/yieldnest/yieldnest-vault
+[submodule "lib/yieldnest-vault-withdrawals"]
+	path = lib/yieldnest-vault-withdrawals
+	url = https://github.com/yieldnest/yieldnest-vault-withdrawals
